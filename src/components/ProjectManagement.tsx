@@ -37,7 +37,8 @@ export const ProjectManagement: React.FC = () => {
     projectDocs, 
     addProjectDoc, 
     deleteProjectDoc, 
-    currentRole 
+    currentRole,
+    showToast
   } = useApp();
 
   const isEditor = currentRole === 'Super Admin' || currentRole === 'Project Manager' || currentRole === 'Konsultan';
@@ -166,6 +167,7 @@ export const ProjectManagement: React.FC = () => {
   const [selectedCatId, setSelectedCatId] = useState<string>('prog4');
   const [newPercentage, setNewPercentage] = useState<number>(85);
   const [newStatus, setNewStatus] = useState<ProgressItem['status']>('Berjalan');
+  const [verificationNote, setVerificationNote] = useState<string>('');
 
   // State for new document uploads
   const [docType, setDocType] = useState<'Photo' | 'Drone Video' | 'Time Lapse'>('Photo');
@@ -180,7 +182,44 @@ export const ProjectManagement: React.FC = () => {
 
   const handleProgressUploadSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate that percentage does not exceed 100%
+    if (newPercentage > 100) {
+      if (showToast) {
+        showToast('Kesalahan: Persentase progres fisik tidak boleh melebihi 100%!', 'error');
+      } else {
+        alert('Kesalahan: Persentase progres fisik tidak boleh melebihi 100%!');
+      }
+      return;
+    }
+    
+    if (newPercentage < 0) {
+      if (showToast) {
+        showToast('Kesalahan: Persentase progres fisik tidak boleh kurang dari 0%!', 'error');
+      } else {
+        alert('Kesalahan: Persentase progres fisik tidak boleh kurang dari 0%!');
+      }
+      return;
+    }
+
+    // Validate that verification note is listed
+    if (!verificationNote.trim()) {
+      if (showToast) {
+        showToast('Kesalahan: Mohon cantumkan catatan verifikasi lapangan sebelum menyimpan progres!', 'error');
+      } else {
+        alert('Kesalahan: Mohon cantumkan catatan verifikasi lapangan sebelum menyimpan progres!');
+      }
+      return;
+    }
+
     updateProgressItem(selectedCatId, newPercentage, newStatus);
+    
+    if (showToast) {
+      showToast(`Sukses memperbarui progres kolom ${newPercentage}% dengan Catatan: "${verificationNote.substring(0, 35)}..."`, 'success');
+    }
+    
+    // Clear verification note on successful submit
+    setVerificationNote('');
   };
 
   const handleProgressSelectChange = (id: string) => {
@@ -504,14 +543,34 @@ export const ProjectManagement: React.FC = () => {
                     type="range" 
                     min="0" 
                     max="100" 
-                    value={newPercentage}
+                    value={newPercentage > 100 ? 100 : newPercentage}
                     onChange={(e) => setNewPercentage(Number(e.target.value))}
                     className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-[#EA580C]" 
                   />
+                  
+                  {/* Premium numeric input allowing fine-tuned floating percent & validation testing */}
+                  <div className="mt-2 flex gap-2">
+                    <div className="relative flex-1">
+                      <input 
+                        type="number" 
+                        min="0" 
+                        max="200" 
+                        step="0.1" 
+                        value={newPercentage}
+                        onChange={(e) => setNewPercentage(parseFloat(e.target.value) || 0)}
+                        placeholder="Masukkan nilai (e.g. 68.5)"
+                        className="w-full text-xs font-mono font-bold px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:border-indigo-500 focus:outline-none text-slate-800"
+                      />
+                      <span className="absolute right-3 top-2 text-xs font-bold text-slate-400 font-mono">%</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-sans mt-1">
+                    * Gunakan input angka di atas untuk mengisi nilai desimal akurat (Maks. 100%).
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-500 uppercase tracking-widest font-mono font-bold mb-2">Status Operasional</label>
+                  <label className="block text-xs text-slate-500 uppercase tracking-widest font-mono font-bold mb-2">Status Operasional Sektor</label>
                   <select 
                     value={newStatus} 
                     onChange={(e) => setNewStatus(e.target.value as any)}
@@ -522,6 +581,23 @@ export const ProjectManagement: React.FC = () => {
                     <option value="Selesai">Selesai (100%)</option>
                     <option value="Tertunda">Tertunda (Klaim Cuaca/Rantai Supply)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-500 uppercase tracking-widest font-mono font-bold mb-1">
+                    Catatan Verifikasi Progres <span className="text-[#EA580C] font-bold">*</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400 font-sans mb-2">
+                    Sebutkan alasan teknis pembaruan progres di lapangan sebagai prasat arsip.
+                  </p>
+                  <textarea
+                    required
+                    rows={3}
+                    value={verificationNote}
+                    onChange={(e) => setVerificationNote(e.target.value)}
+                    placeholder="Contoh: Pengecoran slab lantai 3 selesai dikerjakan, mutu beton K-350 lolos uji tekan lab."
+                    className="w-full text-xs p-3 border border-slate-200 rounded-xl focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-slate-800 font-sans leading-relaxed"
+                  />
                 </div>
 
                 <button 
