@@ -2,6 +2,18 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  Legend as RechartsLegend,
+  ReferenceLine
+} from 'recharts';
 import { 
   Calendar, 
   Clock, 
@@ -905,147 +917,129 @@ export const TimeSchedule: React.FC = () => {
             </div>
           </div>
 
-          {/* Interactive SVG Chart wrapper */}
-          <div className="relative pt-4 overflow-x-auto">
-            <div className="min-w-[640px] w-full">
-              <svg 
-                viewBox="0 0 720 320" 
-                className="w-full h-auto overflow-visible"
-              >
-                {/* Horizontal grid lines for percentage levels */}
-                {[0, 20, 40, 60, 80, 100].map((percent, idx) => {
-                  const y = 280 - (percent * 2.4);
-                  return (
-                    <g key={percent} className="opacity-40">
-                      <line x1="45" y1={y} x2="700" y2={y} stroke="#E2E8F0" strokeWidth="1" strokeDasharray="3 3" />
-                      <text x="35" y={y + 4} textAnchor="end" className="text-[10px] font-mono font-bold text-slate-400">{percent}%</text>
-                    </g>
-                  );
-                })}
+          {/* Interactive S-Curve Chart (using Recharts) */}
+          <div className="relative pt-4 w-full">
+            <div className="w-full text-xs font-mono h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={scheduleCurveData}
+                  margin={{ top: 15, right: 15, left: -15, bottom: 5 }}
+                  onMouseMove={(state) => {
+                    if (state && state.activeTooltipIndex !== undefined && state.activeTooltipIndex !== null) {
+                      setHoveredWeek(Number(state.activeTooltipIndex) + 1);
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredWeek(null);
+                  }}
+                  onClick={(state) => {
+                    if (state && state.activeTooltipIndex !== undefined && state.activeTooltipIndex !== null) {
+                      setCurrentWeekSimulation(Number(state.activeTooltipIndex) + 1);
+                    }
+                  }}
+                >
+                  <defs>
+                    <linearGradient id="planGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#94a3b8" stopOpacity={0.12}/>
+                      <stop offset="95%" stopColor="#94a3b8" stopOpacity={0.0}/>
+                    </linearGradient>
+                    <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#1E3A8A" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#1E3A8A" stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                  
+                  <XAxis 
+                    dataKey="week" 
+                    tickFormatter={(week) => `M-${week}`}
+                    stroke="#94A3B8"
+                    style={{ fontSize: '9px', fontWeight: 'bold', fontFamily: 'monospace' }}
+                  />
+                  
+                  <YAxis 
+                    stroke="#94A3B8"
+                    tickFormatter={(val) => `${val}%`}
+                    style={{ fontSize: '9px', fontWeight: 'bold', fontFamily: 'monospace' }}
+                    domain={[0, 100]}
+                  />
+                  
+                  <RechartsTooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        const isLate = (data.variance ?? 0) < 0;
+                        return (
+                          <div className="bg-white/95 backdrop-blur-md border border-slate-200 p-3 rounded-2xl shadow-xl font-sans text-xs space-y-1.5 transition-all text-slate-800">
+                            <p className="font-mono font-bold text-[#1E3A8A] text-left">Minggu ke-{data.week}</p>
+                            <div className="space-y-1 text-left">
+                              <p className="flex justify-between gap-6">
+                                <span className="text-slate-450">Target Rencana:</span>
+                                <span className="font-mono font-bold">{data.plannedCumulative}%</span>
+                              </p>
+                              <p className="flex justify-between gap-6">
+                                <span className="text-slate-450">Realisasi Lapangan:</span>
+                                <span className="font-mono font-bold text-[#1E3A8A]">
+                                  {data.actualCumulative !== null ? `${data.actualCumulative}%` : 'Belum Mulai'}
+                                </span>
+                              </p>
+                              {data.variance !== null && (
+                                <p className="flex justify-between gap-6 border-t border-slate-100 pt-1">
+                                  <span className="text-slate-500 font-medium">Deviasi Kumulatif:</span>
+                                  <span className={`font-mono font-black ${isLate ? 'text-red-600' : 'text-emerald-600'}`}>
+                                    {data.variance >= 0 ? '+' : ''}{data.variance}%
+                                  </span>
+                                </p>
+                              )}
+                            </div>
+                            <p className="text-[8px] text-[#EA580C] font-mono font-bold mt-1 text-left">* Klik diagram untuk simulasi pekan ini</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
 
-                {/* Vertical grid lines for weeks 1 - 20 */}
-                {scheduleCurveData.map((d, index) => {
-                  const x = 50 + (index * 34); // spread across space
-                  const isCurrent = d.week === currentWeekSimulation;
-                  return (
-                    <g key={d.week}>
-                      {index % 2 === 0 && (
-                        <line x1={x} y1="40" x2={x} y2="280" stroke="#F1F5F9" strokeWidth="1" className="opacity-70" />
-                      )}
-                      
-                      {/* X Axis Labels */}
-                      <text 
-                        x={x} 
-                        y="298" 
-                        textAnchor="middle" 
-                        className={`text-[9px] font-mono font-bold cursor-pointer transition ${isCurrent ? 'fill-orange-600 font-extrabold' : 'fill-slate-400 hover:fill-slate-800'}`}
-                        onClick={() => setCurrentWeekSimulation(d.week)}
-                      >
-                        M-{d.week}
-                      </text>
+                  <Area
+                    type="monotone"
+                    dataKey="plannedCumulative"
+                    stroke="#94A3B8"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 4"
+                    fill="url(#planGrad)"
+                    name="Rencana Kumulatif"
+                  />
 
-                      {/* Current week highlight vertical banner */}
-                      {isCurrent && (
-                        <g>
-                          <rect x={x - 17} y="32" width="34" height="252" fill="#3B82F6" fillOpacity="0.04" rx="4" />
-                          <line x1={x} y1="32" x2={x} y2="284" stroke="#EA580C" strokeWidth="1.5" strokeDasharray="2 2" />
-                          <circle cx={x} cy="32" r="3" fill="#EA580C" />
-                        </g>
-                      )}
-                    </g>
-                  );
-                })}
+                  <Area
+                    type="monotone"
+                    dataKey="actualCumulative"
+                    stroke="#1E3A8A"
+                    strokeWidth={3}
+                    fill="url(#actualGrad)"
+                    connectNulls
+                    name="Realisasi Kumulatif"
+                    dot={{ stroke: '#1E3A8A', strokeWidth: 1.5, r: 3, fill: '#FFFFFF' }}
+                    activeDot={{ r: 6, strokeWidth: 1.5, stroke: '#FFFFFF', fill: '#1E3A8A' }}
+                  />
 
-                {/* Plot: Planned Cumulative S-Curve line path */}
-                {(() => {
-                  const points = scheduleCurveData.map((d, idx) => {
-                    const x = 50 + (idx * 34);
-                    const y = 280 - (d.plannedCumulative * 2.4);
-                    return `${x},${y}`;
-                  }).join(' ');
-
-                  return (
-                    <polyline 
-                      points={points} 
-                      fill="none" 
-                      stroke="#94A3B8" 
-                      strokeWidth="2" 
-                      strokeDasharray="4 4" 
-                      className="transition-all"
-                    />
-                  );
-                })()}
-
-                {/* Plot: Actual Cumulative S-Curve line path */}
-                {(() => {
-                  const activePoints = scheduleCurveData
-                    .filter(d => d.actualCumulative !== null)
-                    .map((d, idx) => {
-                      const x = 50 + (idx * 34);
-                      const y = 280 - ((d.actualCumulative ?? 0) * 2.4);
-                      return `${x},${y}`;
-                    }).join(' ');
-
-                  if (!activePoints) return null;
-
-                  return (
-                    <polyline 
-                      points={activePoints} 
-                      fill="none" 
-                      stroke="#1E3A8A" 
-                      strokeWidth="3.5" 
-                      className="transition-all drop-shadow-sm"
-                    />
-                  );
-                })()}
-
-                {/* Plot active marker interactions dots and tooltip indicators */}
-                {scheduleCurveData.map((d, idx) => {
-                  const x = 50 + (idx * 34);
-                  const yPlan = 280 - (d.plannedCumulative * 2.4);
-                  const yAct = d.actualCumulative !== null ? 280 - (d.actualCumulative * 2.4) : null;
-                  const isHovered = hoveredWeek === d.week;
-
-                  return (
-                    <g key={d.week} className="group/dot">
-                      {/* Planned node hover area */}
-                      <circle col-span
-                        cx={x} 
-                        cy={yPlan} 
-                        r={isHovered ? 5 : 3} 
-                        className="fill-slate-400 group-hover/dot:fill-slate-600 transition cursor-pointer"
-                        onMouseEnter={() => setHoveredWeek(d.week)}
-                        onMouseLeave={() => setHoveredWeek(null)}
-                      />
-
-                      {/* Actual node circles */}
-                      {yAct !== null && (
-                        <circle 
-                          cx={x} 
-                          cy={yAct} 
-                          r={isHovered ? 7 : 4.5} 
-                          className="fill-[#1E3A8A] stroke-white stroke-2 shadow transition-all duration-150 cursor-pointer"
-                          onMouseEnter={() => setHoveredWeek(d.week)}
-                          onMouseLeave={() => setHoveredWeek(null)}
-                        />
-                      )}
-
-                      {/* Transparent focus area captures mouse hover for entire vertical column */}
-                      <rect 
-                        x={x - 17} 
-                        y="40" 
-                        width="34" 
-                        height="240" 
-                        fill="transparent" 
-                        className="cursor-pointer"
-                        onMouseEnter={() => setHoveredWeek(d.week)}
-                        onMouseLeave={() => setHoveredWeek(null)}
-                        onClick={() => setCurrentWeekSimulation(d.week)}
-                      />
-                    </g>
-                  );
-                })}
-              </svg>
+                  {/* Vertical indicator for current week simulation */}
+                  <ReferenceLine 
+                    x={currentWeekSimulation} 
+                    stroke="#EA580C" 
+                    strokeDasharray="3 3"
+                    strokeWidth={2}
+                    label={{ 
+                      value: `M-${currentWeekSimulation} (Simulasi)`, 
+                      position: 'top', 
+                      fill: '#EA580C', 
+                      fontSize: '9px', 
+                      fontWeight: 'extrabold',
+                      fontFamily: 'monospace'
+                    }} 
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
             </div>
           </div>
 

@@ -8,6 +8,7 @@ import { ContractorPortal } from './components/ContractorPortal';
 import { AdminVerification } from './components/AdminVerification';
 import { RABExplorer } from './components/RABExplorer';
 import { TimeSchedule } from './components/TimeSchedule';
+import { ContractModule } from './components/ContractModule';
 import { LoginPortal } from './components/LoginPortal';
 import { AccountsManager } from './components/AccountsManager';
 import { DrawingViewer } from './components/DrawingViewer';
@@ -35,8 +36,10 @@ import {
   FileText,
   CheckCircle2,
   X,
-  LogOut
+  LogOut,
+  Share2
 } from 'lucide-react';
+import { ProjectShareHub } from './components/ProjectShareHub';
 
 const AppShell: React.FC = () => {
   const { 
@@ -54,6 +57,7 @@ const AppShell: React.FC = () => {
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [showShareHub, setShowShareHub] = useState<boolean>(false);
 
   // Filter tabs based on role permissions
   const tabs = [
@@ -61,6 +65,7 @@ const AppShell: React.FC = () => {
     { id: 'drawing_viewer', label: 'Gambar Kerja', icon: Compass, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'project_documents', label: 'Dokumen Proyek', icon: FileText, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'rab_explorer', label: 'E-RAB Resmi', icon: FileSpreadsheet, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
+    { id: 'contract_module', label: 'Modul Kontrak', icon: Briefcase, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'time_schedule', label: 'Jadwal & Kurva-S', icon: Clock, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'owner', label: 'Monitor Owner', icon: Percent, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan'] },
     { id: 'progress', label: 'Progres PM', icon: Sliders, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan'] },
@@ -283,7 +288,15 @@ const AppShell: React.FC = () => {
               </button>
             </div>
 
-
+            {/* Global Share/Kirim Data Proyek Button */}
+            <button
+              onClick={() => setShowShareHub(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EA580C] hover:bg-orange-600 border border-orange-500 rounded-lg text-xs font-mono font-black text-white transition cursor-pointer shadow-md active:scale-95 hover:animate-none"
+              title="Kirim Semua Data Proyek via WA & Email (Review Dulu)"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+              <span>Kirim Data Proyek (WA/Email)</span>
+            </button>
 
             {/* Notification bell logger */}
             <div className="relative">
@@ -359,12 +372,35 @@ const AppShell: React.FC = () => {
         </div>
       </nav>
 
+      {/* STATUS LAPANGAN & TENDER BANNER */}
+      <div className="bg-orange-50 border-y border-orange-200 py-3.5 px-4 md:px-8">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#EA580C] animate-ping shrink-0"></div>
+            <div className="w-2.5 h-2.5 rounded-full bg-[#EA580C] shrink-0 absolute"></div>
+            <p className="text-slate-700 font-sans leading-relaxed">
+              <span className="font-bold text-[#EA580C] uppercase tracking-wider font-mono mr-1.5">[STATUS PROYEK]:</span>
+              Pembangunan fisik lapangan <strong>Belum Dimulai</strong> (Kemajuan Fisik aktual saat ini: <strong>0.0%</strong>) dan pemenang tender resmi <strong>Belum Ada</strong> ditunjuk. Semua paket pengadaan masih berstatus dibuka / tahap penawaran publik.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <span className="px-2.5 py-1 bg-white border border-orange-200 text-[#EA580C] rounded-md font-mono font-black text-[10px] uppercase">
+              Proyek Belum Mulai
+            </span>
+            <span className="px-2.5 py-1 bg-white border border-slate-200 text-slate-600 rounded-md font-mono font-black text-[10px] uppercase">
+              Tender Winner: Nihil
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* MAIN VIEW CONTROLLER GRID */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8">
         
         {/* Render actual views based on active tab state */}
         {activeTab === 'landing' && <LandingPage />}
         {activeTab === 'rab_explorer' && <RABExplorer />}
+        {activeTab === 'contract_module' && <ContractModule />}
         {activeTab === 'time_schedule' && <TimeSchedule />}
         {activeTab === 'owner' && <OwnerDashboard />}
         {activeTab === 'drawing_viewer' && <DrawingViewer />}
@@ -406,6 +442,9 @@ const AppShell: React.FC = () => {
           </p>
         </div>
       </footer>
+
+      {/* PROJECT KONSOLIDASI DATA SHARING DIALOG */}
+      <ProjectShareHub isOpen={showShareHub} onClose={() => setShowShareHub(false)} />
     </div>
   );
 };
