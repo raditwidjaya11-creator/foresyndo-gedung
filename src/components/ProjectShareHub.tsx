@@ -160,22 +160,56 @@ Tanggal Cetak Laporan: ${new Date().toLocaleDateString('id-ID', { weekday: 'long
     showToast('Teks draft laporan berhasil disalin ke clipboard!', 'success');
   };
 
-  // Submit via Mailto
-  const handleSendEmail = (e: React.FormEvent) => {
+  // Submit via Resend API / Mailto fallback
+  const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSending(true);
     setSuccessMode('none');
 
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: email,
+          subject: customSubject,
+          text: customBody,
+        }),
+      });
+
+      const result = await response.json();
       setIsSending(false);
-      setSuccessMode('email');
-      showToast(`Draft review sukses! Mengalihkan ke Email untuk dikirim ke ${email}`, 'success');
+
+      if (response.ok && result.success) {
+        if (result.simulated) {
+          setSuccessMode('email');
+          showToast(`Review Sukses! Membuka Email Client lokal (RESEND_API_KEY belum dikonfigurasi)`, 'info');
+          
+          // Fallback to mailto link
+          const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(customSubject)}&body=${encodeURIComponent(customBody)}`;
+          const link = document.createElement('a');
+          link.href = mailtoUrl;
+          link.click();
+        } else {
+          setSuccessMode('email');
+          showToast(`Email Berhasil Terkirim Secara Real-time Melalui Resend ke ${email}!`, 'success');
+        }
+      } else {
+        throw new Error(result.error || 'Terjadi kesalahan sistem pengiriman');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setIsSending(false);
+      showToast(`Gagal kirim via API. Mengalihkan ke Email Client lokal...`, 'info');
       
+      // Secondary fallback
       const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(customSubject)}&body=${encodeURIComponent(customBody)}`;
       const link = document.createElement('a');
       link.href = mailtoUrl;
       link.click();
-    }, 1200);
+    }
   };
 
   // Submit via WhatsApp Wa.me

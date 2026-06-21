@@ -413,22 +413,53 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
     }
   }, [showShareModal, activeContractor, contractFinancialSummary, negotiatedDiscount, contractStatus, selectedSchemeId, activePaymentSteps, PAYMENT_SCHEMES]);
 
-  const handleSendEmailSimulation = (e: React.FormEvent) => {
+  const handleSendEmailSimulation = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSimulatingSend(true);
     setSendSuccessMode('none');
 
-    setTimeout(() => {
-      setIsSimulatingSend(false);
-      setSendSuccessMode('email');
-      showToast(`Review Berhasil! Dokumen E-RAB & SPK Kontrak dikirim via email ke ${shareEmail}`, 'success');
+    try {
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: shareEmail,
+          subject: shareSubject,
+          text: shareBody,
+        }),
+      });
 
-      // Also trigger a real client-side mailto link to provide real integration
+      const result = await response.json();
+      setIsSimulatingSend(false);
+
+      if (response.ok && result.success) {
+        if (result.simulated) {
+          setSendSuccessMode('email');
+          showToast(`Review Berhasil! Membuka Email Client lokal (RESEND_API_KEY tidak terkonfigurasi)`, 'info');
+
+          const mailtoUrl = `mailto:${encodeURIComponent(shareEmail)}?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(shareBody)}`;
+          const link = document.createElement('a');
+          link.href = mailtoUrl;
+          link.click();
+        } else {
+          setSendSuccessMode('email');
+          showToast(`Email Berhasil Terkirim Secara Real-time Melalui Resend ke ${shareEmail}!`, 'success');
+        }
+      } else {
+        throw new Error(result.error || 'Gagal mengirim email');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setIsSimulatingSend(false);
+      showToast(`Gagal kirim via Resend API. Mengalihkan ke Email Client lokal...`, 'info');
+
       const mailtoUrl = `mailto:${encodeURIComponent(shareEmail)}?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(shareBody)}`;
       const link = document.createElement('a');
       link.href = mailtoUrl;
       link.click();
-    }, 1500);
+    }
   };
 
   const handleSendWhatsAppLink = () => {
