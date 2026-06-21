@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   UserRole,
   UserProfile,
+  AccountCredential,
   ProgressItem,
   ProjectDoc,
   ProjectStats,
@@ -12,15 +13,29 @@ import {
   WeeklyChartData,
   MonthlyCashFlow,
   InvestmentMetrics,
-  ExperienceItem
+  ExperienceItem,
+  DrawingFile,
+  DrawingComment,
+  FormalDocument
 } from '../types';
 import { RAB_METADATA, rabItems } from '../data/rabData';
+import { INITIAL_DRAWINGS } from '../data/drawingData';
+import { INITIAL_FORMAL_DOCUMENTS } from '../data/formalDocsData';
 
 interface AppContextType {
   currentRole: UserRole;
   setCurrentRole: (role: UserRole) => void;
   currentUser: UserProfile | null;
+  setCurrentUser: React.Dispatch<React.SetStateAction<UserProfile | null>>;
   changeUserRole: (role: UserRole) => void;
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  
+  // Accounts Management (Editable exclusively by Super Admin)
+  accounts: AccountCredential[];
+  updateAccount: (role: UserRole, email: string, password: string, representative?: string) => void;
+  addAccount: (account: AccountCredential) => void;
+  deleteAccount: (email: string) => void;
   
   // Collections/State
   projectStats: ProjectStats;
@@ -32,6 +47,17 @@ interface AppContextType {
   projectDocs: ProjectDoc[];
   addProjectDoc: (doc: Omit<ProjectDoc, 'id'>) => void;
   deleteProjectDoc: (id: string) => void;
+
+  // New Drawing Files states
+  drawingFiles: DrawingFile[];
+  addDrawingComment: (drawingId: string, pageNumber: number, text: string, pin?: { x: number; y: number }) => void;
+  addDrawingFile: (fileName: string, totalPage: number, pages: any[]) => void;
+
+  // New Formal Documents states
+  formalDocuments: FormalDocument[];
+  addFormalDocument: (fileName: string, category: FormalDocument['category'], size: string, permissions: UserRole[]) => void;
+  deleteFormalDocument: (id: string) => void;
+  toggleFormalDocShare: (id: string) => void;
   
   contractors: ContractorProfile[];
   registerContractor: (profile: Omit<ContractorProfile, 'id' | 'legalScore' | 'experienceScore' | 'financeScore' | 'hrScore' | 'totalScore' | 'grade' | 'status' | 'verificationStatus' | 'submittedAt'>) => ContractorProfile;
@@ -65,15 +91,96 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const DEFAULT_ACCOUNTS: AccountCredential[] = [
+  {
+    role: 'Owner',
+    title: 'Direksi Owner PT. FGI',
+    representative: 'PT. Foresyndo Global Indonesia',
+    email: 'owner@foresyndo.co.id',
+    password: 'owner2026',
+  },
+  {
+    role: 'Super Admin',
+    title: 'Super Admin (Lead Auditor)',
+    representative: 'Radit Widjaya',
+    email: 'raditwidjaya11@gmail.com',
+    password: 'admin2026',
+  },
+  {
+    role: 'Project Manager',
+    title: 'Project Manager (PM Lapangan)',
+    representative: 'Budi Santoso',
+    email: 'pm.majalengka@foresyndo.com',
+    password: 'pm2026',
+  },
+  {
+    role: 'Konsultan',
+    title: 'Konsultan Pengawas',
+    representative: 'ArchiPlan Specialist',
+    email: 'consultant@archiplan.co.id',
+    password: 'consultant2026',
+  },
+  {
+    role: 'Investor',
+    title: 'Investor FORESYNDO 2',
+    representative: 'H. Sulaiman',
+    email: 'investor_utama@capitalinfo.com',
+    password: 'investor2026',
+  },
+  {
+    role: 'Mitra Kontraktor',
+    title: 'Mitra Kontraktor / Vendor',
+    representative: 'PT. Karya Sejahtera Abadi',
+    email: 'kontraktor@karyasejahtera.com',
+    password: 'kontraktor2026',
+  }
+];
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Current simulating role and user Info
   const [currentRole, setCurrentRole] = useState<UserRole>('Owner');
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>({
-    uid: 'owner_user_123',
-    email: 'owner@foresyndo.co.id',
-    displayName: 'PT. Foresyndo Global Indonesia',
-    role: 'Owner'
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('landing');
+
+  // Accounts state with local storage cache persistence
+  const [accounts, setAccounts] = useState<AccountCredential[]>(() => {
+    const cached = localStorage.getItem('sppi_accounts');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        console.error('Error parsing accounts from localStorage:', e);
+      }
+    }
+    return DEFAULT_ACCOUNTS;
   });
+
+  useEffect(() => {
+    localStorage.setItem('sppi_accounts', JSON.stringify(accounts));
+  }, [accounts]);
+
+  const updateAccount = (role: UserRole, email: string, password: string, representative?: string) => {
+    setAccounts(prev => prev.map(acc => {
+      const matchRep = representative ? acc.representative === representative : true;
+      if (acc.role === role && matchRep) {
+        return { ...acc, email, password };
+      }
+      return acc;
+    }));
+  };
+
+  const addAccount = (account: AccountCredential) => {
+    setAccounts(prev => {
+      if (prev.some(acc => acc.email.toLowerCase() === account.email.toLowerCase())) {
+        return prev;
+      }
+      return [...prev, account];
+    });
+  };
+
+  const deleteAccount = (email: string) => {
+    setAccounts(prev => prev.filter(acc => acc.email.toLowerCase() !== email.toLowerCase()));
+  };
 
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -86,29 +193,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const changeUserRole = (role: UserRole) => {
     setCurrentRole(role);
-    let email = 'user@examples.com';
-    let displayName = 'User Account';
+    const matchedAccount = accounts.find(a => a.role === role);
+    let email = matchedAccount ? matchedAccount.email : 'user@examples.com';
+    let displayName = matchedAccount ? matchedAccount.representative : 'User Account';
     let companyName: string | undefined = undefined;
 
-    if (role === 'Super Admin') {
-      email = 'raditwidjaya11@gmail.com'; // User email from runtime
-      displayName = 'Radit Widjaya (Super Admin)';
-    } else if (role === 'Owner') {
-      email = 'owner@foresyndo.co.id';
-      displayName = 'Direksi PT. Foresyndo Global Indonesia';
-    } else if (role === 'Project Manager') {
-      email = 'pm.majalengka@foresyndo.com';
-      displayName = 'Budi Santoso (Project Manager)';
-    } else if (role === 'Konsultan') {
-      email = 'consultant@archiplan.co.id';
-      displayName = 'ArchiPlan Konsultan Pengawas';
-    } else if (role === 'Investor') {
-      email = 'investor_utama@capitalinfo.com';
-      displayName = 'H. Sulaiman (Investor FORESYNDO 2)';
-    } else if (role === 'Mitra Kontraktor') {
-      email = 'kontraktor@karyasejahtera.com';
-      displayName = 'PT. Karya Sejahtera Abadi';
-      companyName = 'PT. Karya Sejahtera Abadi';
+    if (role === 'Mitra Kontraktor') {
+      companyName = displayName;
     }
 
     setCurrentUser({
@@ -128,11 +219,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 1. PROJECT STATS (Summary metadata)
   const [projectStats, setProjectStats] = useState<ProjectStats>({
-    physicalProgress: 68.5,
-    financialProgress: 72.0,
+    physicalProgress: 0.0,
+    financialProgress: 0.0,
     investmentValue: RAB_METADATA.grandTotal, // Aligned with official RAB: 11,274,738,917 IDR
-    actualSpending: Math.floor(RAB_METADATA.grandTotal * 0.72),   // 72% financially spent: 8,117,812,020 IDR
-    remainingBudget: RAB_METADATA.grandTotal - Math.floor(RAB_METADATA.grandTotal * 0.72),  // 3,156,926,897 IDR
+    actualSpending: 0,   // 0% financially spent
+    remainingBudget: RAB_METADATA.grandTotal,  // Full budget remaining
     hotelRoomsCount: 48,
     kostRoomsCount: 36,
     estimatedRevenueMonthly: 438120000, // 438.12 Juta IDR (aligned with Investor Module projections)
@@ -152,14 +243,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 2. CONSTRUCTION PROGRESS
   const [progressItems, setProgressItems] = useState<ProgressItem[]>([
-    { id: 'prog1', category: 'Persiapan', progressPercent: 100, status: 'Selesai', lastUpdated: '2026-02-15', updatedBy: 'Project Manager' },
-    { id: 'prog2', category: 'Pondasi', progressPercent: 100, status: 'Selesai', lastUpdated: '2026-03-10', updatedBy: 'Project Manager' },
-    { id: 'prog3', category: 'Basement', progressPercent: 100, status: 'Selesai', lastUpdated: '2026-04-18', updatedBy: 'Project Manager' },
-    { id: 'prog4', category: 'Struktur', progressPercent: 88, status: 'Berjalan', lastUpdated: '2026-06-12', updatedBy: 'Project Manager' },
-    { id: 'prog5', category: 'Arsitektur', progressPercent: 42, status: 'Berjalan', lastUpdated: '2026-06-15', updatedBy: 'Project Manager' },
-    { id: 'prog6', category: 'MEP', progressPercent: 30, status: 'Berjalan', lastUpdated: '2026-06-16', updatedBy: 'Project Manager' },
-    { id: 'prog7', category: 'Interior', progressPercent: 12, status: 'Berjalan', lastUpdated: '2026-06-17', updatedBy: 'Project Manager' },
-    { id: 'prog8', category: 'Landscape', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-01', updatedBy: 'Project Manager' }
+    { id: 'prog1', category: 'Persiapan', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog2', category: 'Pondasi', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog3', category: 'Basement', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog4', category: 'Struktur', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog5', category: 'Arsitektur', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog6', category: 'MEP', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog7', category: 'Interior', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' },
+    { id: 'prog8', category: 'Landscape', progressPercent: 0, status: 'Belum Mulai', lastUpdated: '2026-06-20', updatedBy: 'Project Manager' }
   ]);
 
   const updateProgressItem = (id: string, percent: number, status: ProgressItem['status']) => {
@@ -249,6 +340,168 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteProjectDoc = (id: string) => {
     setProjectDocs(prev => prev.filter(doc => doc.id !== id));
     showToast('Dokumen berhasil dihapus dari galeri', 'info');
+  };
+
+  // --------------------------------------------------------------------
+  // 3.5. DRAWING FILES (Gambar Kerja) & FORMAL DOCUMENTS STATES & LOGIC
+  // --------------------------------------------------------------------
+  const [drawingFiles, setDrawingFiles] = useState<DrawingFile[]>(() => {
+    const cached = localStorage.getItem('sppi_drawings');
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) { console.error('Error parsing sppi_drawings:', e); }
+    }
+    return INITIAL_DRAWINGS;
+  });
+
+  const [formalDocuments, setFormalDocuments] = useState<FormalDocument[]>(() => {
+    const cached = localStorage.getItem('sppi_formal_documents');
+    if (cached) {
+      try { return JSON.parse(cached); } catch (e) { console.error('Error parsing sppi_formal_documents:', e); }
+    }
+    return INITIAL_FORMAL_DOCUMENTS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sppi_drawings', JSON.stringify(drawingFiles));
+  }, [drawingFiles]);
+
+  useEffect(() => {
+    localStorage.setItem('sppi_formal_documents', JSON.stringify(formalDocuments));
+  }, [formalDocuments]);
+
+  const addDrawingComment = (drawingId: string, pageNumber: number, text: string, pin?: { x: number; y: number }) => {
+    setDrawingFiles(prev => prev.map(draw => {
+      if (draw.id === drawingId) {
+        const pages = draw.pages.map(page => {
+          if (page.pageNumber === pageNumber) {
+            const newComment: DrawingComment = {
+              id: `com_${Date.now()}`,
+              user: currentUser?.displayName || 'Tamu Proyek',
+              role: currentRole,
+              text,
+              date: new Date().toISOString().split('T')[0],
+              pin
+            };
+            return {
+              ...page,
+              comments: [...page.comments, newComment]
+            };
+          }
+          return page;
+        });
+
+        const changeHistory = draw.changeHistory ? [
+          ...draw.changeHistory,
+          {
+            date: new Date().toISOString().split('T')[0],
+            user: currentUser?.displayName || 'Tamu',
+            action: `Menambahkan komentar pada Halaman ${pageNumber}: "${text.substring(0, 30)}..."`
+          }
+        ] : [{
+          date: new Date().toISOString().split('T')[0],
+          user: currentUser?.displayName || 'Tamu',
+          action: `Menambahkan komentar pada Halaman ${pageNumber}: "${text.substring(0, 30)}..."`
+        }];
+
+        return { ...draw, pages, changeHistory };
+      }
+      return draw;
+    }));
+    
+    addNotification(
+      'Komentar Gambar Kerja Baru',
+      `Catatan revisi baru diunggah oleh ${currentUser?.displayName || 'Tamu'} pada Halaman ${pageNumber}.`,
+      'info'
+    );
+    showToast('Komentar / catatan pinpoint berhasil disimpan!', 'success');
+  };
+
+  const addDrawingFile = (fileName: string, totalPage: number, pages: any[]) => {
+    // We can use pages array directly or import a fallback drawing image
+    const blueprintFallback = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=1200';
+    
+    const newDraw: DrawingFile = {
+      id: `draw_${Date.now()}`,
+      fileName,
+      fileUrl: '#',
+      totalPage,
+      uploadedDate: new Date().toISOString().split('T')[0],
+      uploadedBy: currentUser?.displayName || 'Staff Teknis',
+      pages: pages.map((p, idx) => ({
+        pageNumber: idx + 1,
+        pageCode: p.pageCode || `PG-0${idx + 1}`,
+        title: p.title || `Halaman Detail Teknik ${idx + 1}`,
+        image: p.image || blueprintFallback,
+        category: p.category || 'Arsitektur',
+        scale: p.scale || '1:100',
+        description: p.description || 'Gambar penjelasan teknik penunjang kelengkapan DED.',
+        specifications: p.specifications || ['Kepatuhan standar teknas SNI', 'Review mutu berkala'],
+        aiAnalysis: p.aiAnalysis || {
+          type: p.category === 'Arsitektur' ? 'Denah Arsitektural Umum' : p.category === 'Struktur & Sipil' ? 'Konstruksi Struktur & Beton' : 'Render Visualisasi Lanskap',
+          summary: p.description || 'Gambar penunjang yang mendeskripsikan elemen tata letak atau detail penulangan konstruksi.',
+          dims: 'Skala referensi terlampir.',
+          notes: 'Pelajari rencana pembalokan dan kolom sebelum memulai perancit baja tulangan.'
+        },
+        comments: []
+      })),
+      changeHistory: [{
+        date: new Date().toISOString().split('T')[0],
+        user: currentUser?.displayName || 'Staff',
+        action: 'Mengunggah file PDF gambar resmi'
+      }]
+    };
+
+    setDrawingFiles(prev => [newDraw, ...prev]);
+    addNotification('Gambar Kerja Baru', `Menerima dokumen gambar teknik: ${fileName}`, 'success');
+    showToast('Gambar Kerja berhasil diunggah!', 'success');
+  };
+
+  const addFormalDocument = (fileName: string, category: FormalDocument['category'], size: string, permissions: UserRole[]) => {
+    const newDoc: FormalDocument = {
+      id: `fdoc_${Date.now()}`,
+      fileName,
+      category,
+      size,
+      uploadedDate: new Date().toISOString().split('T')[0],
+      uploadedBy: currentUser?.displayName || 'Staf Tata Usaha',
+      rolePermissions: permissions,
+      downloadCount: 0,
+      sharedWithContractor: permissions.includes('Mitra Kontraktor')
+    };
+
+    setFormalDocuments(prev => [newDoc, ...prev]);
+    addNotification('Dokumen Proyek Diunggah', `Dokumen legalitas/teknis berhasil diarsipkan: ${fileName}`, 'success');
+    showToast('Dokumen proyek berhasil diunggah!', 'success');
+  };
+
+  const deleteFormalDocument = (id: string) => {
+    setFormalDocuments(prev => prev.filter(doc => doc.id !== id));
+    showToast('Dokumen proyek dihapus', 'info');
+  };
+
+  const toggleFormalDocShare = (id: string) => {
+    setFormalDocuments(prev => prev.map(doc => {
+      if (doc.id === id) {
+        const nextShared = !doc.sharedWithContractor;
+        const updatedPermissions = nextShared
+          ? Array.from(new Set([...doc.rolePermissions, 'Mitra Kontraktor' as UserRole]))
+          : doc.rolePermissions.filter(p => p !== 'Mitra Kontraktor');
+        
+        addNotification(
+          nextShared ? 'Akses Kontraktor Dibuka' : 'Akses Kontraktor Ditutup',
+          `Berkas [${doc.fileName}] sekarang ${nextShared ? 'Tersedia' : 'Dicabut'} untuk akses pihak Kontraktor.`,
+          'info'
+        );
+
+        return {
+          ...doc,
+          sharedWithContractor: nextShared,
+          rolePermissions: updatedPermissions
+        };
+      }
+      return doc;
+    }));
+    showToast('Status pembagian dokumen diperbarui!', 'success');
   };
 
   // 4. CONTRACTORS & VERIFICATION DATABASE
@@ -498,9 +751,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       packageName: 'Pekerjaan Struktur Utama, Pondasi Bored Pile & Plat Lantai',
       hpsValue: tend4Hps,
       location: 'FORESYNDO 2 - Jatitujuh Majalengka',
-      schedule: 'Selesai April 2026',
+      schedule: '22 Juni - 15 Juli 2026',
       documentUrl: '#download-tor-struktur',
-      status: 'Selesai',
+      status: 'Dibuka',
       category: 'Kontraktor Gedung'
     }
   ]);
@@ -613,25 +866,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // 8. GRAPH/ANALYTICS DATA
   const [weeklyData] = useState<WeeklyChartData[]>([
-    { week: 'M-1 Mei', planned: 52, actual: 50 },
-    { week: 'M-2 Mei', planned: 55, actual: 54 },
-    { week: 'M-3 Mei', planned: 58, actual: 57 },
-    { week: 'M-4 Mei', planned: 61, actual: 61 },
-    { week: 'M-1 Jun', planned: 63, actual: 64 },
-    { week: 'M-2 Jun', planned: 66, actual: 67 },
-    { week: 'M-3 Jun', planned: 68.5, actual: 68.5 }, // Saat ini
+    { week: 'M-1 Mei', planned: 52, actual: 0 },
+    { week: 'M-2 Mei', planned: 55, actual: 0 },
+    { week: 'M-3 Mei', planned: 58, actual: 0 },
+    { week: 'M-4 Mei', planned: 61, actual: 0 },
+    { week: 'M-1 Jun', planned: 63, actual: 0 },
+    { week: 'M-2 Jun', planned: 66, actual: 0 },
+    { week: 'M-3 Jun', planned: 68.5, actual: 0 }, // Saat ini
     { week: 'M-4 Jun', planned: 71, actual: 0 },
     { week: 'M-1 Jul', planned: 74, actual: 0 },
     { week: 'M-2 Jul', planned: 77, actual: 0 }
   ]);
 
   const [monthlyCashflow] = useState<MonthlyCashFlow[]>([
-    { month: 'Jan', inflow: 1100000000, outflow: 900000000 },
-    { month: 'Feb', inflow: 1300000000, outflow: 1100000000 },
-    { month: 'Mar', inflow: 1500000000, outflow: 1300000000 },
-    { month: 'Apr', inflow: 1800000000, outflow: 1600000000 },
-    { month: 'Mei', inflow: 1600000000, outflow: 1400000000 },
-    { month: 'Jun', inflow: 1900000000, outflow: 1817812020 } // Total sum: 8,117,812,020 (72% of RAB grand total)
+    { month: 'Jan', inflow: 1100000000, outflow: 0 },
+    { month: 'Feb', inflow: 1300000000, outflow: 0 },
+    { month: 'Mar', inflow: 1500000000, outflow: 0 },
+    { month: 'Apr', inflow: 1800000000, outflow: 0 },
+    { month: 'Mei', inflow: 1600000000, outflow: 0 },
+    { month: 'Jun', inflow: 1900000000, outflow: 0 } // No cashflow actual outflow yet (progress is zero)
   ]);
 
   const [investmentMetrics, setInvestmentMetrics] = useState<InvestmentMetrics>({
@@ -655,7 +908,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 ============================================================
 Tanggal Cetak : ${new Date().toLocaleString('id-ID')}
 Kategori      : ${category.toUpperCase()} LAPORAN DIGITAL
-Status Proyek : Terpantau Kondusif - Progres 68.5%
+Status Proyek : Persiapan Lapangan - Progres ${projectStats.physicalProgress}%
 Lokasi        : Jatitujuh, Majalengka, Jawa Barat
 ------------------------------------------------------------\n`;
 
@@ -741,7 +994,14 @@ Lokasi        : Jatitujuh, Majalengka, Jawa Barat
         currentRole,
         setCurrentRole,
         currentUser,
+        setCurrentUser,
         changeUserRole,
+        activeTab,
+        setActiveTab,
+        accounts,
+        updateAccount,
+        addAccount,
+        deleteAccount,
         projectStats,
         updateProjectStats,
         progressItems,
@@ -749,6 +1009,13 @@ Lokasi        : Jatitujuh, Majalengka, Jawa Barat
         projectDocs,
         addProjectDoc,
         deleteProjectDoc,
+        drawingFiles,
+        addDrawingComment,
+        addDrawingFile,
+        formalDocuments,
+        addFormalDocument,
+        deleteFormalDocument,
+        toggleFormalDocShare,
         contractors,
         registerContractor,
         updateContractorStatus,

@@ -12,6 +12,14 @@ export interface UserProfile {
   companyName?: string;
 }
 
+export interface AccountCredential {
+  role: UserRole;
+  title: string;
+  representative: string;
+  email: string;
+  password: string;
+}
+
 export interface ProgressItem {
   id: string;
   category: 'Persiapan' | 'Pondasi' | 'Basement' | 'Struktur' | 'Arsitektur' | 'MEP' | 'Interior' | 'Landscape';
@@ -144,3 +152,58 @@ export interface MonthlyCashFlow {
   inflow: number;
   outflow: number;
 }
+
+export interface DrawingComment {
+  id: string;
+  user: string;
+  role: UserRole;
+  text: string;
+  date: string;
+  pin?: { x: number; y: number }; // Coordinates as percentages (0-100) for visual pins
+}
+
+export interface DrawingPage {
+  pageNumber: number;
+  pageCode: string;
+  title: string;
+  image: string;
+  category: 'Arsitektur' | 'Struktur & Sipil' | 'Visualisasi 3D';
+  scale: string;
+  description: string;
+  specifications: string[];
+  aiAnalysis: {
+    type: string;
+    summary: string;
+    dims: string;
+    notes: string;
+  };
+  comments: DrawingComment[];
+}
+
+export interface DrawingFile {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  totalPage: number;
+  uploadedDate: string;
+  uploadedBy: string;
+  pages: DrawingPage[];
+  changeHistory?: Array<{
+    date: string;
+    user: string;
+    action: string;
+  }>;
+}
+
+export interface FormalDocument {
+  id: string;
+  fileName: string;
+  category: 'Kontrak & Legalitas' | 'Teknis & DED' | 'Finansial & E-RAB' | 'Laporan Lapangan';
+  size: string;
+  uploadedDate: string;
+  uploadedBy: string;
+  rolePermissions: UserRole[];
+  downloadCount: number;
+  sharedWithContractor: boolean;
+}
+

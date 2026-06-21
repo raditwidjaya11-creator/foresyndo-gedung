@@ -7,8 +7,11 @@ import { InvestorModule } from './components/InvestorModule';
 import { ContractorPortal } from './components/ContractorPortal';
 import { AdminVerification } from './components/AdminVerification';
 import { RABExplorer } from './components/RABExplorer';
-import { BlueprintViewer } from './components/BlueprintViewer';
 import { TimeSchedule } from './components/TimeSchedule';
+import { LoginPortal } from './components/LoginPortal';
+import { AccountsManager } from './components/AccountsManager';
+import { DrawingViewer } from './components/DrawingViewer';
+import { ProjectDocuments } from './components/ProjectDocuments';
 import { 
   Building, 
   MapPin, 
@@ -31,27 +34,32 @@ import {
   ShieldCheck,
   FileText,
   CheckCircle2,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 const AppShell: React.FC = () => {
   const { 
     currentRole, 
     currentUser, 
+    setCurrentUser,
     changeUserRole, 
+    activeTab,
+    setActiveTab,
     notifications, 
     markNotificationAsRead, 
     clearNotifications,
-    toast 
+    toast,
+    showToast
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<string>('landing');
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
 
   // Filter tabs based on role permissions
   const tabs = [
     { id: 'landing', label: 'Portal Publik', icon: Globe, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
-    { id: 'blueprint_viewer', label: 'Blueprint & 3D', icon: Compass, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
+    { id: 'drawing_viewer', label: 'Gambar Kerja', icon: Compass, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
+    { id: 'project_documents', label: 'Dokumen Proyek', icon: FileText, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'rab_explorer', label: 'E-RAB Resmi', icon: FileSpreadsheet, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'time_schedule', label: 'Jadwal & Kurva-S', icon: Clock, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'owner', label: 'Monitor Owner', icon: Percent, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan'] },
@@ -59,6 +67,7 @@ const AppShell: React.FC = () => {
     { id: 'investor', label: 'Feasibility Investasi', icon: TrendingUp, allowed: ['Super Admin', 'Owner', 'Investor'] },
     { id: 'contractor', label: 'Portal Mitra', icon: Award, allowed: ['Super Admin', 'Mitra Kontraktor'] },
     { id: 'admin', label: 'Verifikasi Admin', icon: ShieldAlert, allowed: ['Super Admin', 'Owner'] },
+    { id: 'accounts_mgr', label: 'Kelola Akun SPPI', icon: Users, allowed: ['Super Admin'] },
   ];
 
   const allowedTabs = tabs.filter(t => t.allowed.includes(currentRole));
@@ -93,6 +102,20 @@ const AppShell: React.FC = () => {
 
   // Unread notifications counter
   const unreadCount = notifications.filter(n => !n.read).length;
+
+  if (!currentUser) {
+    return (
+      <>
+        {toast && (
+          <div className="fixed bottom-5 right-5 z-50 animate-slideUp bg-white border-l-4 border-orange-500 p-4 rounded-r-xl shadow-2xl flex items-center gap-3 max-w-sm border-y border-r border-slate-100 text-slate-900">
+            <div className="w-2.5 h-2.5 rounded-full bg-orange-500 glow-orange"></div>
+            <p className="text-xs font-mono font-medium text-slate-850 leading-relaxed">{toast.message}</p>
+          </div>
+        )}
+        <LoginPortal />
+      </>
+    );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen text-slate-900 font-sans flex flex-col justify-between selection:bg-orange-500 selection:text-white">
@@ -235,28 +258,32 @@ const AppShell: React.FC = () => {
               <span>Majalengka: {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB</span>
             </div>
 
-            {/* Simulated Active Account Identity details */}
-            <div className="flex items-center gap-2 bg-blue-900/50 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-mono">
-              <User className="w-3.5 h-3.5 text-orange-350" />
-              <span className="text-white font-semibold max-w-[124px] truncate">{currentUser?.displayName}</span>
+            {/* Simulated Active Account Identity details with strict Logout control */}
+            <div className="flex items-center gap-3 bg-blue-900/50 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-mono">
+              <div className="flex items-center gap-1.5 border-r border-blue-500/20 pr-3">
+                <User className="w-3.5 h-3.5 text-orange-350" />
+                <span className="text-white font-semibold max-w-[124px] truncate" title={currentUser?.displayName}>
+                  {currentUser?.displayName}
+                </span>
+                <span className="text-[9px] bg-orange-650/40 text-orange-300 border border-orange-500/30 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">
+                  {currentRole}
+                </span>
+              </div>
+              
+              <button 
+                onClick={() => {
+                  setCurrentUser(null);
+                  showToast('Anda telah keluar dari sesi pengawasan.', 'info');
+                }}
+                className="flex items-center gap-1.5 px-2 py-1 bg-red-600/80 hover:bg-red-700 text-white rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer transition active:scale-95"
+                title="Keluar Sesi Otoritas"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>Keluar</span>
+              </button>
             </div>
 
-            {/* Simulated Role selector dropdown */}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-blue-200 font-mono uppercase hidden sm:inline">Role Simulasi:</span>
-              <select 
-                value={currentRole} 
-                onChange={(e) => changeUserRole(e.target.value as any)}
-                className="bg-blue-900/80 hover:bg-blue-800 text-white border border-blue-500/40 px-2.5 py-1.5 rounded-lg text-xs font-mono font-bold focus:border-[#EA580C] outline-none cursor-pointer"
-              >
-                <option value="Owner" className="text-slate-900 bg-white">Owner (PT. FGI)</option>
-                <option value="Super Admin" className="text-slate-900 bg-white">Super Admin (Radit Widjaya)</option>
-                <option value="Project Manager" className="text-slate-900 bg-white">Project Manager (PM)</option>
-                <option value="Konsultan" className="text-slate-900 bg-white">Konsultan Pengawas</option>
-                <option value="Investor" className="text-slate-900 bg-white">Investor FORESYNDO 2</option>
-                <option value="Mitra Kontraktor" className="text-slate-900 bg-white">Mitra Kontraktor (Vendor)</option>
-              </select>
-            </div>
+
 
             {/* Notification bell logger */}
             <div className="relative">
@@ -337,14 +364,16 @@ const AppShell: React.FC = () => {
         
         {/* Render actual views based on active tab state */}
         {activeTab === 'landing' && <LandingPage />}
-        {activeTab === 'blueprint_viewer' && <BlueprintViewer />}
         {activeTab === 'rab_explorer' && <RABExplorer />}
         {activeTab === 'time_schedule' && <TimeSchedule />}
         {activeTab === 'owner' && <OwnerDashboard />}
+        {activeTab === 'drawing_viewer' && <DrawingViewer />}
+        {activeTab === 'project_documents' && <ProjectDocuments />}
         {activeTab === 'progress' && <ProjectManagement />}
         {activeTab === 'investor' && <InvestorModule />}
         {activeTab === 'contractor' && <ContractorPortal />}
         {activeTab === 'admin' && <AdminVerification />}
+        {activeTab === 'accounts_mgr' && <AccountsManager />}
 
       </main>
 
