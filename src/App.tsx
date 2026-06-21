@@ -40,6 +40,7 @@ import {
   Share2
 } from 'lucide-react';
 import { ProjectShareHub } from './components/ProjectShareHub';
+import { ModuleShareWidget } from './components/ModuleShareWidget';
 
 const AppShell: React.FC = () => {
   const { 
@@ -288,15 +289,17 @@ const AppShell: React.FC = () => {
               </button>
             </div>
 
-            {/* Global Share/Kirim Data Proyek Button */}
-            <button
-              onClick={() => setShowShareHub(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EA580C] hover:bg-orange-600 border border-orange-500 rounded-lg text-xs font-mono font-black text-white transition cursor-pointer shadow-md active:scale-95 hover:animate-none"
-              title="Kirim Semua Data Proyek via WA & Email (Review Dulu)"
-            >
-              <Share2 className="w-3.5 h-3.5" />
-              <span>Kirim Data Proyek (WA/Email)</span>
-            </button>
+            {/* Global Share/Kirim Data Proyek Button (Hidden for Mitra Kontraktor role) */}
+            {currentRole !== 'Mitra Kontraktor' && (
+              <button
+                onClick={() => setShowShareHub(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#EA580C] hover:bg-orange-600 border border-orange-500 rounded-lg text-xs font-mono font-black text-white transition cursor-pointer shadow-md active:scale-95 hover:animate-none"
+                title="Kirim Semua Data Proyek via WA & Email (Review Dulu)"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Kirim Data Proyek (WA/Email)</span>
+              </button>
+            )}
 
             {/* Notification bell logger */}
             <div className="relative">
@@ -396,6 +399,9 @@ const AppShell: React.FC = () => {
 
       {/* MAIN VIEW CONTROLLER GRID */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8">
+        
+        {/* Module Sharing Hub Widget for Admin & Owner role */}
+        <ModuleShareWidget activeTabId={activeTab} />
         
         {/* Render actual views based on active tab state */}
         {activeTab === 'landing' && <LandingPage />}

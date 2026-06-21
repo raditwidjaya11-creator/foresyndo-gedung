@@ -413,6 +413,109 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
     }
   }, [showShareModal, activeContractor, contractFinancialSummary, negotiatedDiscount, contractStatus, selectedSchemeId, activePaymentSteps, PAYMENT_SCHEMES]);
 
+  const generateContractHTML = () => {
+    const stepsHTML = activePaymentSteps.map((step, idx) => {
+      const amt = Math.round(contractFinancialSummary.finalContractGrandTotal * (step.pct / 100));
+      return `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 0; color: #475569; font-size: 13px;">Termin ${idx + 1}: ${step.name}</td>
+          <td style="padding: 8px 0; text-align: right; color: #64748b; font-size: 13px; font-weight: 500;">${step.pct}%</td>
+          <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #1e3a8a; font-size: 13px;">Rp ${amt.toLocaleString('id-ID')},00</td>
+        </tr>
+      `;
+    }).join('');
+
+    const schemeName = PAYMENT_SCHEMES.find(s => s.id === selectedSchemeId)?.name || 'Skema Standar';
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Surat Perintah Kerja (SPK) &amp; E-RAB Kontrak</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9; padding: 30px 15px; margin: 0; -webkit-font-smoothing: antialiased;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          
+          <!-- Modern Accent Header -->
+          <div style="background-color: #1e3a8a; padding: 28px 24px; border-bottom: 4px solid #ea580c; text-align: left;">
+            <p style="margin: 0 0 4px 0; color: #f97316; font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; font-weight: bold; font-family: monospace;">PT. Foresyndo Global Indonesia</p>
+            <h1 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.2;">Konfirmasi E-RAB &amp; SPK Penerbitan Kontrak Kerja</h1>
+          </div>
+
+          <!-- Body Content Container -->
+          <div style="padding: 24px 20px;">
+            <p style="font-size: 14px; line-height: 1.6; color: #334155; margin-top: 0;">
+              Yth. Tim <strong>${activeContractor ? activeContractor.companyName : ''}</strong>,<br/>
+              Perwakilan: <strong>Bapak/Ibu ${activeContractor ? (activeContractor.director || 'Pimpinan') : 'Penerima Tugas'}</strong><br/><br/>
+              Dengan hormat, sebagai tindak lanjut negosiasi anggaran, berikut adalah tinjauan resmi unit Rencana Kerja E-RAB dan SPK Kontrak Konstruksi untuk Proyek Pembangunan Gedung Hotel &amp; Kost Eksklusif Foresyndo 2 Kertajati:
+            </p>
+
+            <!-- Financial Details Card -->
+            <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 13px; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold;">Rincian Rekonsiliasi Finansial</h3>
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Nilai Pokok BoQ Kerja:</td>
+                  <td style="padding: 6px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9;">Rp ${contractFinancialSummary.baseSubtotal.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Faktor Diskon Negosiasi:</td>
+                  <td style="padding: 6px 0; text-align: right; color: #ef4444; font-weight: bold; border-bottom: 1px solid #f1f5f9;">- ${negotiatedDiscount}%</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Adendum Baru (VO):</td>
+                  <td style="padding: 6px 0; text-align: right; color: #10b981; font-weight: bold; border-bottom: 1px solid #f1f5f9;">+ Rp ${contractFinancialSummary.amendmentsSubtotal.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Dasar Pengenaan Pajak (DPP):</td>
+                  <td style="padding: 6px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9; font-weight: bold;">Rp ${contractFinancialSummary.dppTotal.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Pajak PPN (11%):</td>
+                  <td style="padding: 6px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9;">Rp ${contractFinancialSummary.ppnValue.toLocaleString('id-ID')}</td>
+                </tr>
+                <tr style="font-size: 15px; font-weight: bold;">
+                  <td style="padding: 10px 0 0 0; color: #0f172a;">GRAND TOTAL SPK KONTRAK:</td>
+                  <td style="padding: 10px 0 0 0; text-align: right; color: #2563eb;">Rp ${contractFinancialSummary.finalContractGrandTotal.toLocaleString('id-ID')}</td>
+                </tr>
+              </table>
+            </div>
+
+            <!-- Milestone Schedule Card -->
+            <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 24px;">
+              <h3 style="margin: 0 0 12px 0; font-size: 13px; color: #0f766e; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold;">Termin Alur Pembayaran (${schemeName})</h3>
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                ${stepsHTML}
+              </table>
+              <p style="margin: 12px 0 0 0; font-size: 11px; color: #64748b; line-height: 1.4;">
+                * Sesuai ketentuan, rilis anggaran termin wajib melalui verifikasi progress lapangan oleh PM & mendapat approval elektronik dari Owner di portal.
+              </p>
+            </div>
+
+            <!-- View Action Link Button -->
+            <div style="text-align: center; margin: 30px 0 15px 0;">
+              <a href="${window.location.origin}" target="_blank" style="display: inline-block; background-color: #1e3a8a; color: #ffffff; text-decoration: none; padding: 12px 24px; font-size: 13px; font-weight: bold; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(30, 58, 138, 0.15); font-family: sans-serif;">Akses &amp; Tanda Tangani Kontrak</a>
+            </div>
+
+            <p style="font-size: 12px; line-height: 1.5; color: #64748b; text-align: center; margin-top: 25px;">
+              Dokumen PDF SPK Resmi Foresyndo terlampir secara otomatis pada email ini.<br/>
+              Keamanan Terenkripsi: <strong>SHA-256 Verified Signature</strong> | Status Kontrak: <strong>${contractStatus === 'Signed' ? 'SIGNED (AKTIF)' : 'PENDING TTD'}</strong>
+            </p>
+          </div>
+
+          <!-- Footer Area -->
+          <div style="background-color: #f8fafc; padding: 16px 20px; border-top: 1px solid #f1f5f9; text-align: center; font-size: 11px; color: #94a3b8;">
+            <p style="margin: 0;">&copy; ${new Date().getFullYear()} PT. Foresyndo Global Indonesia. All Rights Reserved.</p>
+            <p style="margin: 4px 0 0 0;">Unit Procurement, Purchasing, and Contract Engineering - Foresyndo</p>
+          </div>
+          
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   const handleSendEmailSimulation = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSimulatingSend(true);
@@ -436,6 +539,7 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
           to: shareEmail,
           subject: shareSubject,
           text: shareBody,
+          html: generateContractHTML(),
           attachments: pdfBase64 ? [
             {
               filename: `SPK_Contract_${activeContractor.companyName.replace(/ /g, '_')}.pdf`,

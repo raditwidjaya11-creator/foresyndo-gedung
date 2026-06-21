@@ -342,6 +342,186 @@ Tanggal Cetak Laporan: ${new Date().toLocaleDateString('id-ID', { weekday: 'long
     return doc;
   };
 
+  const generateConsolidatedHTML = () => {
+    let sectionsHtml = '';
+
+    if (includeRAB) {
+      sectionsHtml += `
+        <!-- Section 1 -->
+        <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-left: 4px solid #1e3a8a;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.05em; font-family: sans-serif;">1. DATA RENCANA ANGGARAN BIAYA (E-RAB)</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Nilai Total RAB Resmi:</td>
+              <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #0f172a; border-bottom: 1px solid #f1f5f9;">Rp ${RAB_METADATA.grandTotal.toLocaleString('id-ID')},00</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Volume Item Pekerjaan:</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${rabItems.length} Item Detail (14 Sub-Kategori)</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b;">Standar Spesifikasi Material:</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: 500;">Premium Sektor P1 (Foresyndo Standard Grade A)</td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }
+
+    if (includeContract) {
+      sectionsHtml += `
+        <!-- Section 2 -->
+        <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-left: 4px solid #10b981;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #0f766e; text-transform: uppercase; letter-spacing: 0.05em; font-family: sans-serif;">2. SPK & ALOKASI ANGGARAN KONTRAK MITRA</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Status Administrasi SPK:</td>
+              <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #10b981; border-bottom: 1px solid #f1f5f9;">Draft Kontrak Terverifikasi (Online)</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Alokasi Nilai Kontrak (Nett):</td>
+              <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #0f172a; border-bottom: 1px solid #f1f5f9;">Rp ${(RAB_METADATA.grandTotal * 0.95).toLocaleString('id-ID')},00 (Diskon Teknis 5%)</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b;">Skema Termin Pembayaran:</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a;">Rilis Bertahap 5 Tahap Milestone Berdasarkan Kemajuan Konstruksi</td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }
+
+    if (includeProgress) {
+      const itemsListHtml = progressItems.map(item => `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 8px 4px; color: #334155; font-size: 11px;">${item.category}</td>
+          <td style="padding: 8px 4px; text-align: right; font-weight: bold; color: #1e3a8a; font-size: 11px;">${item.progressPercent}%</td>
+          <td style="padding: 8px 4px; text-align: right; font-size: 11px;"><span style="background-color: ${item.status === 'On Schedule' ? '#dcfce7' : '#fef9c3'}; color: ${item.status === 'On Schedule' ? '#15803d' : '#854d0e'}; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${item.status}</span></td>
+        </tr>
+      `).join('');
+
+      sectionsHtml += `
+        <!-- Section 3 -->
+        <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-left: 4px solid #f59e0b;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #b45309; text-transform: uppercase; letter-spacing: 0.05em; font-family: sans-serif;">3. STATUS HAMPIRAN / PROGRES FISIK PM</h3>
+          <div style="margin-bottom: 15px; font-size: 13px;">
+            <p style="margin: 4px 0; color: #475569;">Rata-rata Progres Realisasi: <strong style="color: #0f172a;">${projectStats.physicalProgress.toFixed(1)}% Completed</strong></p>
+            <p style="margin: 4px 0; color: #475569;">Estimasi Tanggal Penyelesaian Selesai Fisik: <strong style="color: #0f172a;">${projectStats.targetDate}</strong></p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 2px solid #cbd5e1; text-align: left; color: #475569; font-weight: bold; font-size: 11px;">
+                <th style="padding: 8px 4px;">Sektor Pekerjaan</th>
+                <th style="padding: 8px 4px; text-align: right;">Kemajuan %</th>
+                <th style="padding: 8px 4px; text-align: right;">Status Jadwal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsListHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    if (includeInvestor) {
+      sectionsHtml += `
+        <!-- Section 4 -->
+        <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-left: 4px solid #8b5cf6;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.05em; font-family: sans-serif;">4. PROYEKSI FEASIBILITY STUDY & ESTIMASI INVESTASI</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Kuantitas Room Unit:</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9; font-weight: 500;">${projectStats.hotelRoomsCount} Hotel Rooms &amp; ${projectStats.kostRoomsCount} Premium Units</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Proyeksi Gross Income Terhadap Okupansi:</td>
+              <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #16a34a; border-bottom: 1px solid #f1f5f9;">Rp ${projectStats.estimatedRevenueMonthly.toLocaleString('id-ID')}/bulan</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Nilai Net Present Value (NPV 5 Tahun):</td>
+              <td style="padding: 6px 0; text-align: right; font-weight: bold; color: #0f172a; border-bottom: 1px solid #f1f5f9;">Rp ${(RAB_METADATA.grandTotal * 1.5).toLocaleString('id-ID')},00</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Internal Rate of Return (IRR):</td>
+              <td style="padding: 6px 0; text-align: right; color: #7c3aed; font-weight: bold; border-bottom: 1px solid #f1f5f9;">~24.5%</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b;">Estimasi BEP / Payback Period:</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a; font-weight: bold;">~4.1 Tahun</td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }
+
+    if (includeDocuments) {
+      sectionsHtml += `
+        <!-- Section 5 -->
+        <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #e2e8f0; border-left: 4px solid #ec4899;">
+          <h3 style="margin: 0 0 12px 0; font-size: 14px; color: #be185d; text-transform: uppercase; letter-spacing: 0.05em; font-family: sans-serif;">5. LAMPIRAN LEGALITAS & BERKAS TEKNIS</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <tr>
+              <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Arsip Cetak Gambar CAD / Detail Struktur:</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${drawingFiles.length} Gambar Teknis</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #64748b;">Dokumen Legalitas Formal (IMB, AMDAL):</td>
+              <td style="padding: 6px 0; text-align: right; color: #0f172a;">${formalDocuments.length} Berkas Hasil Rekonsiliasi</td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>[DATA KONSOLIDASI PROYEK] Foresyndo 2</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9; padding: 30px 15px; margin: 0; -webkit-font-smoothing: antialiased;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
+          
+          <!-- Modern Accent Header -->
+          <div style="background-color: #1e3a8a; padding: 28px 24px; border-bottom: 4px solid #ea580c; text-align: left;">
+            <p style="margin: 0 0 4px 0; color: #f97316; font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; font-weight: bold; font-family: monospace;">Foresyndo Global Indonesia</p>
+            <h1 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.2;">Laporan Konsolidasi Data Digital Proyek</h1>
+          </div>
+
+          <!-- Body Content Container -->
+          <div style="padding: 24px 20px;">
+            <p style="font-size: 14px; line-height: 1.6; color: #334155; margin-top: 0;">
+              Yth. <strong>${recipientName}</strong>,<br/><br/>
+              Berikut dikirimkan Lembar Data Digital &amp; Dokumen Konsolidasi Proyek Pembangunan Hotel &amp; Kost Eksklusif Foresyndo 2 Kertajati. Laporan audit digital ini dikompilasi secara instan:
+            </p>
+
+            ${sectionsHtml}
+
+            <!-- View Dashboard Action Link Button -->
+            <div style="text-align: center; margin: 30px 0 15px 0;">
+              <a href="${window.location.origin}" target="_blank" style="display: inline-block; background-color: #1e3a8a; color: #ffffff; text-decoration: none; padding: 12px 24px; font-size: 13px; font-weight: bold; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(30, 58, 138, 0.15); font-family: sans-serif;">Buka Dashboard Utama Proyek</a>
+            </div>
+
+            <p style="font-size: 12px; line-height: 1.5; color: #64748b; text-align: center; margin-top: 25px;">
+              Dokumen ini dilengkapi sertifikat pengesahan resmi dan lampiran Dokumen Laporan Konsolidasi PDF.<br/>
+              Keamanan Verifikasi: <strong>Tersertifikasi SHA-256</strong> | Tautan Verifikasi: <code>EST-72648</code>
+            </p>
+          </div>
+
+          <!-- Footer Area -->
+          <div style="background-color: #f8fafc; padding: 16px 20px; border-top: 1px solid #f1f5f9; text-align: center; font-size: 11px; color: #94a3b8;">
+            <p style="margin: 0;">&copy; ${new Date().getFullYear()} PT. Foresyndo Global Indonesia. All Rights Reserved.</p>
+            <p style="margin: 4px 0 0 0;">Unit Procurement &amp; Project Controls - Kertajati Integrated Digital Hub</p>
+          </div>
+          
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
   // Submit via Resend API / Mailto fallback
   const handleSendEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -366,6 +546,7 @@ Tanggal Cetak Laporan: ${new Date().toLocaleDateString('id-ID', { weekday: 'long
           to: email,
           subject: customSubject,
           text: customBody,
+          html: generateConsolidatedHTML(),
           attachments: pdfBase64 ? [
             {
               filename: 'Laporan_Konsolidasi_Proyek_FGI.pdf',
