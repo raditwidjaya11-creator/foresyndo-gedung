@@ -13,7 +13,7 @@ async function startServer() {
 
   // API Route for sending email via Resend
   app.post("/api/send-email", async (req, res) => {
-    const { to, subject, text, html } = req.body;
+    const { to, subject, text, html, attachments } = req.body;
 
     if (!to || !subject || !text) {
       return res.status(400).json({ error: "Missing required fields: to, subject, or text" });
@@ -32,12 +32,21 @@ async function startServer() {
     try {
       const { Resend } = await import("resend");
       const resend = new Resend(apiKey);
+
+      const formattedAttachments = attachments && Array.isArray(attachments)
+        ? attachments.map((att: any) => ({
+            filename: att.filename,
+            content: Buffer.from(att.content, "base64"),
+          }))
+        : undefined;
+
       const data = await resend.emails.send({
         from: "Foresyndo Projects <noreply@foresyndoglobalindonesia.my.id>",
         to: [to],
         subject: subject,
         text: text,
         html: html || text.replace(/\n/g, "<br/>"),
+        attachments: formattedAttachments,
       });
 
       return res.json({ success: true, data });

@@ -418,6 +418,14 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
     setIsSimulatingSend(true);
     setSendSuccessMode('none');
 
+    let pdfBase64 = '';
+    try {
+      const doc = generateDraftContractPDF();
+      pdfBase64 = doc.output('datauristring').split(',')[1];
+    } catch (pdfErr) {
+      console.error('Failed to generate SPK Contract PDF for email:', pdfErr);
+    }
+
     try {
       const response = await fetch('/api/send-email', {
         method: 'POST',
@@ -428,6 +436,12 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
           to: shareEmail,
           subject: shareSubject,
           text: shareBody,
+          attachments: pdfBase64 ? [
+            {
+              filename: `SPK_Contract_${activeContractor.companyName.replace(/ /g, '_')}.pdf`,
+              content: pdfBase64
+            }
+          ] : undefined
         }),
       });
 
@@ -437,7 +451,15 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
       if (response.ok && result.success) {
         if (result.simulated) {
           setSendSuccessMode('email');
-          showToast(`Review Berhasil! Membuka Email Client lokal (RESEND_API_KEY tidak terkonfigurasi)`, 'info');
+          showToast(`Review Berhasil! Membuka Email Client lokal beserta lampiran PDF (RESEND_API_KEY tidak terkonfigurasi)`, 'info');
+
+          // Download locally to let them have it since it is simulated
+          try {
+            const doc = generateDraftContractPDF();
+            doc.save(`SPK_Kontrak_Resmi_Foresyndo2_${activeContractor.companyName.replace(/ /g, '_')}.pdf`);
+          } catch (dlErr) {
+            console.error(dlErr);
+          }
 
           const mailtoUrl = `mailto:${encodeURIComponent(shareEmail)}?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(shareBody)}`;
           const link = document.createElement('a');
@@ -445,7 +467,7 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
           link.click();
         } else {
           setSendSuccessMode('email');
-          showToast(`Email Berhasil Terkirim Secara Real-time Melalui Resend ke ${shareEmail}!`, 'success');
+          showToast(`Email & Lampiran SPK Contract PDF Berhasil Terkirim Melalui Resend ke ${shareEmail}!`, 'success');
         }
       } else {
         throw new Error(result.error || 'Gagal mengirim email');
@@ -454,6 +476,14 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
       console.error(err);
       setIsSimulatingSend(false);
       showToast(`Gagal kirim via Resend API. Mengalihkan ke Email Client lokal...`, 'info');
+
+      // Download locally as fallback
+      try {
+        const doc = generateDraftContractPDF();
+        doc.save(`SPK_Kontrak_Resmi_Foresyndo2_${activeContractor.companyName.replace(/ /g, '_')}.pdf`);
+      } catch (dlErr) {
+        console.error(dlErr);
+      }
 
       const mailtoUrl = `mailto:${encodeURIComponent(shareEmail)}?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(shareBody)}`;
       const link = document.createElement('a');
@@ -667,8 +697,7 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
     }
   };
 
-  // Generate beautiful local PDF containing compiled SPK & BoQ details
-  const handleGeneratePDFContract = () => {
+  const generateDraftContractPDF = () => {
     const doc = new jsPDF('p', 'mm', 'a4');
     
     // Aesthetic Design Header Config
@@ -766,7 +795,7 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
       ['DEVISI 1', 'Pekerjaan Persiapan Lapangan', `Rp ${boqItemsWithDiscount.filter(x => x.chapter.toLowerCase().includes('persiapan')).reduce((a, b) => a + b.totalCost, 0).toLocaleString('id-ID')}`],
       ['DEVISI 2', 'Pekerjaan Pondasi Substruktur (Bored Pile & Pile Cap)', `Rp ${boqItemsWithDiscount.filter(x => x.chapter.toLowerCase().includes('pondasi') || x.chapter.toLowerCase().includes('substruktur')).reduce((a, b) => a + b.totalCost, 0).toLocaleString('id-ID')}`],
       ['DEVISI 3', 'Pekerjaan Beton Superstruktur', `Rp ${boqItemsWithDiscount.filter(x => x.chapter.toLowerCase().includes('superstruktur')).reduce((a, b) => a + b.totalCost, 0).toLocaleString('id-ID')}`],
-      ['DEVISI 4', 'Pekerjaan Arsitektur & Kamar Mandi', `Rp ${boqItemsWithDiscount.filter(x => x.chapter.toLowerCase().includes('arsitektur') || x.chapter.toLowerCase().includes('finishing')).reduce((a, b) => a + b.totalCost, 0).toLocaleString('id-ID')}`],
+      ['DEVISI 4', 'Pekerjaan Arsitektur & Kamar Mandi', `Rp ${boqItemsWithDiscount.filter(x => x.chapter.toLowerCase().includes('arsitektur') || x.chapter.toLowerCase().includes('finishing')).reduce((a, b) => a + b.totalCost, 0).toLocaleString('id-[#ID')}`],
       ['DEVISI 5', 'Pekerjaan Mekanikal Elektrikal Plumbing (MEP) & Sipil', `Rp ${boqItemsWithDiscount.filter(x => x.chapter.toLowerCase().includes('mep') || x.chapter.toLowerCase().includes('plumbing') || x.chapter.toLowerCase().includes('fire') || x.chapter.toLowerCase().includes('hvac') || x.chapter.toLowerCase().includes('kolam') || x.chapter.toLowerCase().includes('cafe') || x.chapter.toLowerCase().includes('luar') || x.chapter.toLowerCase().includes('testing')).reduce((a, b) => a + b.totalCost, 0).toLocaleString('id-ID')}`],
       ['ADENDUM VO', 'Amandemen Pekerjaan Tambah Baru', `Rp ${contractFinancialSummary.amendmentsSubtotal.toLocaleString('id-ID')}`],
     ];
@@ -833,9 +862,19 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
       }
     });
 
-    // Save
-    doc.save(`SPK_Kontrak_Resmi_Foresyndo2_${activeContractor.companyName.replace(/ /g, '_')}.pdf`);
-    showToast('Download detail SPK Kontrak beserta Rencana Termin berhasil!', 'success');
+    return doc;
+  };
+
+  // Generate beautiful local PDF containing compiled SPK & BoQ details
+  const handleGeneratePDFContract = () => {
+    try {
+      const doc = generateDraftContractPDF();
+      doc.save(`SPK_Kontrak_Resmi_Foresyndo2_${activeContractor.companyName.replace(/ /g, '_')}.pdf`);
+      showToast('Download detail SPK Kontrak beserta Rencana Termin berhasil!', 'success');
+    } catch (err) {
+      console.error(err);
+      showToast('Gagal memproses file PDF kontrak.', 'error');
+    }
   };
 
   return (
