@@ -37,7 +37,10 @@ import {
   EyeOff,
   PenTool,
   Download,
-  Lock
+  Lock,
+  Grid,
+  Search,
+  Filter
 } from 'lucide-react';
 import { DrawingFile, DrawingPage, DrawingComment, UserRole } from '../types';
 
@@ -80,10 +83,15 @@ export const DrawingViewer: React.FC = () => {
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  const [gridEnabled, setGridEnabled] = useState<boolean>(false);
+  const [gridSize, setGridSize] = useState<number>(40); // Grid spacing in px
+  const [gridColor, setGridColor] = useState<string>('rgba(99, 102, 241, 0.25)'); // Indigo semi-transparent by default
+  const [gridStyle, setGridStyle] = useState<'solid' | 'dashed' | 'dotted'>('dashed');
   const [activeTabPanel, setActiveTabPanel] = useState<'detail' | 'ai' | 'comments' | 'history'>('detail');
 
   // New Upload Form State
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
+  const [showDrawingDetailModal, setShowDrawingDetailModal] = useState<boolean>(false);
   const [newFileName, setNewFileName] = useState<string>('');
   const [newFilePagesCount, setNewFilePagesCount] = useState<number>(3);
   const [newFileCategory, setNewFileCategory] = useState<'Arsitektur' | 'Struktur & Sipil' | 'Visualisasi 3D'>('Arsitektur');
@@ -116,6 +124,12 @@ export const DrawingViewer: React.FC = () => {
   ]);
   const [customQuestion, setCustomQuestion] = useState<string>('');
   const [activePinDetail, setActivePinDetail] = useState<DrawingComment | null>(null);
+
+  // Annotation list sidebar states
+  const [isAnnotationSidebarOpen, setIsAnnotationSidebarOpen] = useState<boolean>(true);
+  const [sidebarPageScope, setSidebarPageScope] = useState<'current' | 'all'>('current');
+  const [annotationSearchQuery, setAnnotationSearchQuery] = useState<string>('');
+  const [annotationTypeFilter, setAnnotationTypeFilter] = useState<'all' | 'pin' | 'sticky' | 'line'>('all');
 
   // Initialize upload modal state when it is opened
   useEffect(() => {
@@ -256,6 +270,172 @@ export const DrawingViewer: React.FC = () => {
     if (activePages.length === 0) return undefined;
     return activePages.find(p => p.pageNumber === activePageNum) || activePages[0];
   }, [activePages, activePageNum]);
+
+  // Core jump to annotation helper
+  const handleJumpToAnnotation = (x: number, y: number) => {
+    const targetZoom = 1.6;
+    setZoomLevel(targetZoom);
+    
+    // Calculate coordinates
+    const centerX = imageBounds.width / 2;
+    const centerY = imageBounds.height / 2;
+    const imageX = (x / 100) * imageBounds.width;
+    const imageY = (y / 100) * imageBounds.height;
+    
+    const dx = centerX - imageX;
+    const dy = centerY - imageY;
+    
+    setPanOffset({
+      x: dx * targetZoom,
+      y: dy * targetZoom
+    });
+
+    setAnnotationsVisible(true);
+    showToast('Fokus dipindahkan ke lokasi anotasi!', 'success');
+  };
+
+  // Compile all annotations of the blueprint
+  const blueprintAnnotations = useMemo(() => {
+    if (!activeDrawing) return [];
+    
+    const list: Array<{
+      type: 'pin' | 'sticky' | 'line';
+      id: string;
+      pageNumber: number;
+      pageCode: string;
+      pageTitle: string;
+      text: string;
+      author: string;
+      date: string;
+      color?: string;
+      role?: string;
+      x?: number;
+      y?: number;
+      pointsCount?: number;
+    }> = [];
+
+    // Traverse all pages of the active version
+    const pagesToScan = activePages;
+    
+    pagesToScan.forEach(page => {
+      // A. Pinpoint comments from drawing model
+      if (page.comments) {
+        page.comments.forEach(comment => {
+          list.push({
+            type: 'pin',
+            id: comment.id,
+            pageNumber: page.pageNumber,
+            pageCode: page.pageCode,
+            pageTitle: page.title,
+            text: comment.text,
+            author: comment.user,
+            date: comment.date,
+            role: comment.role,
+            x: comment.pin?.x,
+            y: comment.pin?.y
+          });
+        });
+      }
+
+      // B. Sticky notes from localStorage state
+      const pKey = `${activeDrawing.id}_${page.pageNumber}`;
+      const pageAnn = allPageAnnotations[pKey];
+      if (pageAnn) {
+        if (pageAnn.stickyNotes) {
+          pageAnn.stickyNotes.forEach(note => {
+            list.push({
+              type: 'sticky',
+              id: note.id,
+              pageNumber: page.pageNumber,
+              pageCode: page.pageCode,
+              pageTitle: page.title,
+              text: note.text,
+              author: note.author,
+              date: note.date,
+              color: note.color,
+              x: note.x,
+              y: note.y
+            });
+          });
+        }
+
+        if (pageAnn.lines) {
+          pageAnn.lines.forEach((line, idx) => {
+            list.push({
+              type: 'line',
+              id: `line_${pKey}_${idx}`,
+              pageNumber: page.pageNumber,
+              pageCode: page.pageCode,
+              pageTitle: page.title,
+              text: line.isHighlighter ? `Highlight ${line.color}` : `Coretan Bebas ${line.color}`,
+              author: 'Markah Bebas',
+              date: '',
+              color: line.color,
+              pointsCount: line.points.length,
+              x: line.points[0]?.x,
+              y: line.points[0]?.y
+            });
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [activeDrawing, activePages, allPageAnnotations]);
+
+  // Filtered annotations based on user selection in sidebar
+  const filteredAnnotations = useMemo(() => {
+    let result = blueprintAnnotations;
+    
+    if (sidebarPageScope === 'current') {
+      result = result.filter(ann => ann.pageNumber === activePageNum);
+    }
+    
+    if (annotationTypeFilter !== 'all') {
+      result = result.filter(ann => ann.type === annotationTypeFilter);
+    }
+    
+    if (annotationSearchQuery.trim()) {
+      const q = annotationSearchQuery.toLowerCase();
+      result = result.filter(ann => 
+        ann.text.toLowerCase().includes(q) || 
+        ann.author.toLowerCase().includes(q) ||
+        ann.pageCode.toLowerCase().includes(q) ||
+        ann.pageTitle.toLowerCase().includes(q)
+      );
+    }
+    
+    return result;
+  }, [blueprintAnnotations, sidebarPageScope, activePageNum, annotationTypeFilter, annotationSearchQuery]);
+
+  // Jump handler when an item in sidebar is clicked
+  const handleAnnotationClick = (ann: typeof blueprintAnnotations[0]) => {
+    if (ann.pageNumber !== activePageNum) {
+      setActivePageNum(ann.pageNumber);
+      setPendingPin(null);
+      setIsPlacingPin(false);
+      
+      // Give a short delay for image to load and bounds to stabilize
+      setTimeout(() => {
+        if (ann.x !== undefined && ann.y !== undefined) {
+          handleJumpToAnnotation(ann.x, ann.y);
+        }
+      }, 300);
+    } else {
+      if (ann.x !== undefined && ann.y !== undefined) {
+        handleJumpToAnnotation(ann.x, ann.y);
+      }
+    }
+
+    if (ann.type === 'pin') {
+      const origComment = activePages
+        .find(p => p.pageNumber === ann.pageNumber)
+        ?.comments.find(c => c.id === ann.id);
+      if (origComment) {
+        setActivePinDetail(origComment);
+      }
+    }
+  };
 
   // Handle measurement of image dimensions to resize canvas correctly
   const handleImageLoad = () => {
@@ -1525,21 +1705,26 @@ export const DrawingViewer: React.FC = () => {
     }
   };
 
-  // Clicking on image to place comment pin
+  // Clicking on image to place comment pin or show details
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    if (!isAuthorizedToAnnotate) {
-      showToast('Akses Terbatas: Hanya Admin & Pengawas yang dapat meletakkan pinpoint.', 'error');
-      return;
+    if (isPlacingPin) {
+      if (!isAuthorizedToAnnotate) {
+        showToast('Akses Terbatas: Hanya Admin & Pengawas yang dapat meletakkan pinpoint.', 'error');
+        return;
+      }
+      if (!drawingImageRef.current || !activeDrawing || !activePage) return;
+      
+      const rect = drawingImageRef.current.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      
+      setPendingPin({ x, y });
+      showToast('Silahkan isi keterangan pin pada panel input di sebelah kanan', 'info');
+      setActiveTabPanel('comments');
+    } else {
+      // Open drawing page description modal when clicking on standard image
+      setShowDrawingDetailModal(true);
     }
-    if (!isPlacingPin || !drawingImageRef.current || !activeDrawing || !activePage) return;
-    
-    const rect = drawingImageRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    
-    setPendingPin({ x, y });
-    showToast('Silahkan isi keterangan pin pada panel input di sebelah kanan', 'info');
-    setActiveTabPanel('comments');
   };
 
   const handleSavePinComment = (e: React.FormEvent) => {
@@ -2240,7 +2425,7 @@ export const DrawingViewer: React.FC = () => {
                 </div>
               )}
 
-              {/* ACTION BUTTONS (UNDO, EYE, TRASH) */}
+              {/* ACTION BUTTONS (UNDO, EYE, GRID, TRASH) */}
               <div className="flex items-center gap-1.5 ml-2 bg-slate-950/45 p-1 rounded-lg border border-slate-800/40">
                 <button
                   type="button"
@@ -2251,6 +2436,17 @@ export const DrawingViewer: React.FC = () => {
                   title={annotationsVisible ? "Sembunyikan coretan & catatan" : "Tampilkan coretan & catatan"}
                 >
                   {annotationsVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setGridEnabled(prev => !prev)}
+                  className={`p-1.5 rounded transition ${
+                    gridEnabled ? 'text-emerald-400 bg-slate-900/60 hover:text-emerald-300 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-400 hover:bg-slate-800'
+                  }`}
+                  title={gridEnabled ? "Matikan Garis Bantu Grid (Overlay)" : "Aktifkan Garis Bantu Grid (Overlay)"}
+                >
+                  <Grid className="w-3.5 h-3.5" />
                 </button>
                 
                 {isAuthorizedToAnnotate && (
@@ -2277,25 +2473,307 @@ export const DrawingViewer: React.FC = () => {
                   </>
                 )}
               </div>
+
+              {/* GRID CONFIGURATION SUB-TOOLBAR */}
+              {gridEnabled && (
+                <div className="flex items-center gap-2 pl-2 pr-1.5 py-1 bg-slate-950 border border-slate-800 rounded-lg animate-fade-in shrink-0">
+                  <span className="text-[9px] font-bold text-slate-400 tracking-wider font-sans">KUSTOMISASI GRID:</span>
+                  
+                  <div className="flex items-center gap-1">
+                    <span className="text-[8px] text-slate-500">Ukuran:</span>
+                    <select
+                      value={gridSize}
+                      onChange={(e) => setGridSize(Number(e.target.value))}
+                      className="bg-slate-900 border border-slate-750 rounded px-1 py-0.5 text-slate-300 font-mono text-[9px] select-none cursor-pointer"
+                      title="Ukuran Kotak Grid"
+                    >
+                      <option value={20}>20px</option>
+                      <option value={30}>30px</option>
+                      <option value={40}>40px</option>
+                      <option value={50}>50px</option>
+                      <option value={60}>60px</option>
+                      <option value={80}>80px</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[8px] text-slate-500">Gaya:</span>
+                    <select
+                      value={gridStyle}
+                      onChange={(e) => setGridStyle(e.target.value as 'solid' | 'dashed' | 'dotted')}
+                      className="bg-slate-900 border border-slate-750 rounded px-1 py-0.5 text-slate-300 text-[9px] select-none cursor-pointer"
+                      title="Gaya Garis Grid"
+                    >
+                      <option value="dashed">Putus</option>
+                      <option value="solid">Utuh</option>
+                      <option value="dotted">Titik</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1 pl-1 border-l border-slate-850">
+                    <span className="text-[8px] text-slate-500">Warna:</span>
+                    <div className="flex items-center gap-1">
+                      {[
+                        { value: 'rgba(99, 102, 241, 0.25)', bg: 'bg-indigo-500', label: 'Indigo' },
+                        { value: 'rgba(16, 185, 129, 0.3)', bg: 'bg-emerald-500', label: 'Emerald' },
+                        { value: 'rgba(239, 68, 68, 0.25)', bg: 'bg-red-500', label: 'Merah' },
+                        { value: 'rgba(245, 158, 11, 0.25)', bg: 'bg-amber-500', label: 'Amber' },
+                        { value: 'rgba(148, 163, 184, 0.25)', bg: 'bg-slate-400', label: 'Slate' }
+                      ].map((col) => (
+                        <button
+                          key={col.value}
+                          type="button"
+                          onClick={() => setGridColor(col.value)}
+                          className={`w-2.5 h-2.5 rounded-full border transition-all ${
+                            gridColor === col.value
+                              ? 'ring-1 ring-white border-white scale-110'
+                              : 'border-transparent opacity-60 hover:opacity-100'
+                          } ${col.bg}`}
+                          title={col.label}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Canvas Wrapper */}
-          <div 
-            onMouseDown={handleWrapperMouseDown}
-            onMouseMove={handleWrapperMouseMove}
-            onMouseUp={handleWrapperMouseUp}
-            onMouseLeave={handleWrapperMouseUp}
-            onTouchStart={handleWrapperTouchStart}
-            onTouchMove={handleWrapperTouchMove}
-            onTouchEnd={handleWrapperTouchEnd}
-            onWheel={handleWheelZoom}
-            className={`flex-1 overflow-hidden flex items-center justify-center p-4 bg-slate-950 relative min-h-0 select-none transition-colors duration-150 ${
-              annotationMode === 'none' && !isPlacingPin
-                ? isPanning ? 'cursor-grabbing bg-slate-900/40' : 'cursor-grab hover:bg-slate-950/90'
-                : ''
-            }`}
-          >
+          {/* Main Workspace Area: Sidebar + Canvas */}
+          <div className="flex-1 flex flex-row min-h-0 overflow-hidden relative">
+            
+            {/* PERSISTENT ANNOTATION SIDEBAR */}
+            <div 
+              className={`bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col h-full overflow-hidden select-none shrink-0 relative ${
+                isAnnotationSidebarOpen ? 'w-[260px]' : 'w-0 border-r-0'
+              }`}
+            >
+              {/* Sidebar Header */}
+              <div className="p-3 bg-slate-950 border-b border-slate-800 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-indigo-400">
+                    <History className="w-4 h-4" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-200">Anotasi & Catatan</span>
+                  </div>
+                  <span className="text-[10px] font-mono bg-indigo-500/15 text-indigo-400 font-bold px-1.5 py-0.5 rounded-full">
+                    {blueprintAnnotations.length} total
+                  </span>
+                </div>
+
+                {/* Scope Switcher Tabs */}
+                <div className="grid grid-cols-2 gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setSidebarPageScope('current')}
+                    className={`py-1 text-[10px] font-bold rounded-md transition cursor-pointer text-center ${
+                      sidebarPageScope === 'current'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Halaman Ini ({blueprintAnnotations.filter(a => a.pageNumber === activePageNum).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarPageScope('all')}
+                    className={`py-1 text-[10px] font-bold rounded-md transition cursor-pointer text-center ${
+                      sidebarPageScope === 'all'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Semua Hal ({blueprintAnnotations.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Sidebar Filters & Search */}
+              <div className="p-2 border-b border-slate-800 bg-slate-950/40 flex flex-col gap-1.5">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={annotationSearchQuery}
+                    onChange={(e) => setAnnotationSearchQuery(e.target.value)}
+                    placeholder="Cari anotasi..."
+                    className="w-full bg-slate-900 text-slate-100 placeholder-slate-500 text-[11px] rounded-md border border-slate-800 pl-7 pr-2.5 py-1 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  />
+                  {annotationSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setAnnotationSearchQuery('')}
+                      className="text-slate-400 hover:text-white absolute right-2 top-1/2 -translate-y-1/2 font-bold text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Filter chips */}
+                <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none select-none">
+                  {[
+                    { value: 'all', label: 'Semua' },
+                    { value: 'pin', label: 'Pinpoint' },
+                    { value: 'sticky', label: 'Memo' },
+                    { value: 'line', label: 'Coretan' }
+                  ].map((chip) => (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      onClick={() => setAnnotationTypeFilter(chip.value as any)}
+                      className={`text-[9px] font-bold px-2 py-0.5 rounded-full transition-all shrink-0 cursor-pointer ${
+                        annotationTypeFilter === chip.value
+                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/45 shadow-inner'
+                          : 'bg-slate-950 text-slate-500 border border-slate-850 hover:text-slate-300 hover:border-slate-800'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* List Container */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-2 max-h-[500px]">
+                {filteredAnnotations.length > 0 ? (
+                  filteredAnnotations.map((ann) => {
+                    // Type-specific colors & styles
+                    let typeBadgeBg = 'bg-slate-850 border-slate-750 text-slate-400';
+                    let typeLabel = 'Coretan';
+                    let itemColorAccent = 'border-l-slate-600';
+                    let iconEl = <Move className="w-3 h-3 text-slate-400" />;
+
+                    if (ann.type === 'pin') {
+                      typeBadgeBg = 'bg-rose-500/10 border-rose-500/20 text-rose-400';
+                      typeLabel = 'Pinpoint';
+                      itemColorAccent = 'border-l-rose-500';
+                      iconEl = <MapPin className="w-3 h-3 text-rose-400 fill-rose-500/25" />;
+                    } else if (ann.type === 'sticky') {
+                      typeLabel = 'Memo';
+                      iconEl = <FileText className="w-3 h-3 text-emerald-400" />;
+                      
+                      const sColors: Record<string, { badge: string; border: string }> = {
+                        yellow: { badge: 'bg-amber-500/10 border-amber-500/20 text-amber-300', border: 'border-l-amber-400' },
+                        pink: { badge: 'bg-rose-500/10 border-rose-500/20 text-rose-300', border: 'border-l-rose-400' },
+                        green: { badge: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300', border: 'border-l-emerald-400' },
+                        blue: { badge: 'bg-sky-500/10 border-sky-500/20 text-sky-300', border: 'border-l-sky-400' }
+                      };
+                      const sStyle = sColors[ann.color || 'yellow'] || sColors.yellow;
+                      typeBadgeBg = sStyle.badge;
+                      itemColorAccent = sStyle.border;
+                    } else if (ann.type === 'line') {
+                      typeBadgeBg = 'bg-slate-500/10 border-slate-500/20 text-indigo-300';
+                      typeLabel = 'Coretan';
+                      itemColorAccent = `border-l-indigo-500`;
+                      iconEl = <PenTool className="w-3 h-3 text-indigo-400" />;
+                    }
+
+                    const isCurrentPage = ann.pageNumber === activePageNum;
+
+                    return (
+                      <button
+                        key={ann.id}
+                        type="button"
+                        onClick={() => handleAnnotationClick(ann)}
+                        className={`w-full text-left bg-slate-950/40 hover:bg-slate-850/80 border border-slate-850 hover:border-slate-800 rounded-lg p-2.5 transition relative flex flex-col gap-1.5 border-l-3 ${itemColorAccent} cursor-pointer group`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-1.5">
+                            {iconEl}
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1 py-0.2 rounded-md border ${typeBadgeBg}`}>
+                              {typeLabel}
+                            </span>
+                          </div>
+                          
+                          <span className={`text-[8.5px] font-mono font-black ${isCurrentPage ? 'text-indigo-400' : 'text-slate-500'}`}>
+                            {ann.pageCode}
+                          </span>
+                        </div>
+
+                        <p className="text-slate-200 text-[10.5px] font-sans leading-relaxed line-clamp-2 font-medium break-words">
+                          {ann.text}
+                        </p>
+
+                        <div className="flex items-center justify-between text-[8px] text-slate-500 border-t border-slate-900 pt-1 w-full">
+                          <span className="truncate max-w-[110px] font-bold">
+                            Oleh: {ann.author}
+                          </span>
+                          <span>
+                            {ann.date || 'Markah Bebas'}
+                          </span>
+                        </div>
+
+                        {/* Page indicator tooltip if scope is all */}
+                        {sidebarPageScope === 'all' && (
+                          <span className="absolute bottom-1 right-1.5 text-[7.5px] font-semibold text-slate-500">
+                            {ann.pageTitle.substring(0, 15)}...
+                          </span>
+                        )}
+                        
+                        {/* Interactive focus overlay indicator */}
+                        <div className="absolute inset-0 bg-indigo-500/2.5 opacity-0 group-hover:opacity-100 transition rounded-lg pointer-events-none" />
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="text-center py-10 bg-slate-950/20 rounded-lg border border-slate-850/60 p-4">
+                    <Info className="w-5 h-5 text-slate-600 mx-auto mb-2" />
+                    <p className="text-slate-400 font-bold text-[10px] font-sans">
+                      Tidak ada anotasi
+                    </p>
+                    <p className="text-slate-500 text-[9px] mt-1 font-sans leading-relaxed">
+                      {annotationSearchQuery ? 'Coba ubah kueri filter pencarian Anda.' : 'Gunakan tombol coret/catatan di atas untuk membuat penelaahan baru.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Indicator inside sidebar */}
+              <div className="p-2 border-t border-slate-850 bg-slate-950/80 text-[8.5px] text-slate-500 font-mono flex items-center justify-between">
+                <span>AKTIF: Halaman {activePageNum}</span>
+                <span>{filteredAnnotations.length} item</span>
+              </div>
+            </div>
+
+            {/* Side drawer toggle tab */}
+            <button
+              type="button"
+              onClick={() => setIsAnnotationSidebarOpen(!isAnnotationSidebarOpen)}
+              className="absolute left-0 top-1/2 -translate-y-1/2 bg-slate-900 border-y border-r border-slate-850 text-slate-400 hover:text-white p-1 rounded-r-lg shadow-2xl z-30 flex items-center justify-center cursor-pointer hover:bg-slate-800 transition-colors duration-200 animate-fade-in"
+              style={{
+                left: isAnnotationSidebarOpen ? '260px' : '0px',
+                transition: 'left 300ms cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+              title={isAnnotationSidebarOpen ? "Sembunyikan Daftar Anotasi" : "Tampilkan Daftar Anotasi"}
+            >
+              {isAnnotationSidebarOpen ? <ChevronLeft className="w-4.5 h-4.5 text-indigo-400" /> : <ChevronRight className="w-4.5 h-4.5 text-indigo-400 animate-pulse" />}
+            </button>
+
+            {/* Canvas Wrapper */}
+            <div 
+              onMouseDown={handleWrapperMouseDown}
+              onMouseMove={handleWrapperMouseMove}
+              onMouseUp={handleWrapperMouseUp}
+              onMouseLeave={handleWrapperMouseUp}
+              onTouchStart={handleWrapperTouchStart}
+              onTouchMove={handleWrapperTouchMove}
+              onTouchEnd={handleWrapperTouchEnd}
+              onWheel={handleWheelZoom}
+              className={`flex-1 overflow-hidden flex items-center justify-center p-4 bg-slate-950 relative min-h-0 select-none transition-colors duration-150 ${
+                annotationMode === 'none' && !isPlacingPin
+                  ? isPanning ? 'cursor-grabbing bg-slate-900/40' : 'cursor-grab hover:bg-slate-950/90'
+                  : ''
+              }`}
+            >
+            
+            {/* FLOATING TIP: CLICK IMAGE FOR DETAILS */}
+            {annotationMode === 'none' && !isPlacingPin && (
+              <div className="absolute top-4 right-4 bg-slate-900/90 border border-indigo-500/30 text-indigo-300 text-[10px] font-bold font-mono px-3.5 py-1.5 rounded-full shadow-2xl z-20 flex items-center gap-1.5 backdrop-blur-md animate-fade-in">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                <span>KLIK GAMBAR UNTUK DETAIL</span>
+              </div>
+            )}
             
             {/* FLOATING BLUEPRINT PAN-ZOOM CONTROLS (D-PAD) */}
             <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2 bg-slate-900/95 border border-slate-800 p-2.5 rounded-xl shadow-xl backdrop-blur-md">
@@ -2440,11 +2918,33 @@ export const DrawingViewer: React.FC = () => {
                 alt={activePage?.title}
                 onLoad={handleImageLoad}
                 onClick={handleImageClick}
-                className={`max-w-full max-h-[500px] object-contain rounded border border-slate-800 ${
-                  isPlacingPin ? 'cursor-cell border-yellow-400/80 ring-2 ring-yellow-400/20' : 'cursor-default'
+                className={`max-w-full max-h-[500px] object-contain rounded border transition-all duration-150 ${
+                  isPlacingPin 
+                    ? 'cursor-cell border-yellow-400/80 ring-2 ring-yellow-400/20' 
+                    : annotationMode === 'none'
+                    ? 'cursor-pointer border-slate-800 hover:border-indigo-500 hover:shadow-lg hover:brightness-105 hover:ring-4 hover:ring-indigo-500/10'
+                    : 'cursor-default border-slate-800'
                 }`}
                 referrerPolicy="no-referrer"
               />
+
+              {/* GRID OVERLAY (LINES FOR MANUAL MEASUREMENT & ANNOTATION PLACEMENT) */}
+              {gridEnabled && (
+                <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-[5] select-none">
+                  <defs>
+                    <pattern id="drawingGridPattern" width={gridSize} height={gridSize} patternUnits="userSpaceOnUse">
+                      <path 
+                        d={`M ${gridSize} 0 L 0 0 0 ${gridSize}`} 
+                        fill="none" 
+                        stroke={gridColor} 
+                        strokeWidth="0.75" 
+                        strokeDasharray={gridStyle === 'dashed' ? '4,4' : gridStyle === 'dotted' ? '1,3' : undefined}
+                      />
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#drawingGridPattern)" />
+                </svg>
+              )}
 
               {/* TRANSPARENT VECTOR DRAWING OVERLAY */}
               <canvas
@@ -2615,6 +3115,8 @@ export const DrawingViewer: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+
           </div>
 
           {/* Quick Stats Footer */}
@@ -3526,6 +4028,221 @@ export const DrawingViewer: React.FC = () => {
                   </>
                 )}
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DETAIL KETERANGAN GAMBAR KERJA MODAL */}
+      <AnimatePresence>
+        {showDrawingDetailModal && activePage && (
+          <div className="fixed inset-0 bg-slate-950/80 z-[60] flex items-center justify-center p-4 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full shadow-2xl relative overflow-hidden flex flex-col my-8"
+            >
+              {/* Decorative Accent Header */}
+              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+              
+              {/* Modal Header */}
+              <div className="bg-slate-950 text-white p-5 border-b border-slate-850 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/10 border border-indigo-500/25 flex items-center justify-center text-indigo-400 font-mono font-bold text-sm">
+                    {activePage.pageCode}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 font-mono">
+                        Detail Keterangan Gambar Kerja
+                      </span>
+                      <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-mono">
+                        VERIFIED DED
+                      </span>
+                    </div>
+                    <h3 className="text-base font-extrabold text-slate-100 tracking-tight mt-0.5">
+                      {activePage.title}
+                    </h3>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDrawingDetailModal(false)}
+                  className="p-1.5 hover:bg-slate-800 rounded-lg transition text-slate-400 hover:text-white cursor-pointer"
+                  title="Tutup Detail"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto max-h-[70vh] flex flex-col gap-6 text-xs text-slate-300">
+                
+                {/* Grid layout for structured metadata */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                  
+                  {/* Left Column: Specs & Description */}
+                  <div className="md:col-span-7 flex flex-col gap-5">
+                    {/* Primary Technical Description */}
+                    <div className="bg-slate-950/40 border border-slate-850 rounded-xl p-4.5">
+                      <div className="flex items-center gap-1.5 mb-2.5">
+                        <FileText className="w-4 h-4 text-indigo-400" />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                          DESKRIPSI TEKNIS UTAMA
+                        </span>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed font-normal text-xs font-sans">
+                        {activePage.description || 'Gambar penjelasan teknik penunjang kelengkapan DED.'}
+                      </p>
+                    </div>
+
+                    {/* Specifications List */}
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                          SPESIFIKASI KONSTRUKSI LAPANGAN
+                        </span>
+                        <span className="text-[9px] font-mono text-indigo-400 font-bold bg-indigo-500/10 px-2.5 py-0.5 rounded-full">
+                          {activePage.specifications?.length || 0} Parameter
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {activePage.specifications && activePage.specifications.length > 0 ? (
+                          activePage.specifications.map((spec, sIdx) => (
+                            <div key={sIdx} className="bg-slate-950/30 border border-slate-850/60 rounded-lg p-3 hover:border-slate-800 transition flex items-start gap-3">
+                              <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                              <p className="text-slate-300 leading-relaxed font-sans font-medium">
+                                {spec}
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-6 bg-slate-950/25 rounded-lg border border-slate-850 text-slate-500">
+                            Belum ada spesifikasi khusus tercantum untuk halaman ini.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: AI Analysis & Metadata */}
+                  <div className="md:col-span-5 flex flex-col gap-5">
+                    
+                    {/* AI Smart Analysis Card */}
+                    <div className="bg-gradient-to-b from-indigo-950/30 to-purple-950/20 border border-indigo-500/20 rounded-xl p-4.5">
+                      <div className="flex items-center gap-2 mb-3.5">
+                        <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                        <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest">
+                          ANALISA CERDAS AI SPPI
+                        </span>
+                      </div>
+
+                      <div className="space-y-3.5 text-slate-300">
+                        <div>
+                          <span className="text-[9px] font-semibold text-indigo-400 uppercase block tracking-wider">Tipe Deteksi Komponen</span>
+                          <p className="text-slate-100 font-bold font-sans mt-0.5 text-xs">{activePage.aiAnalysis.type}</p>
+                        </div>
+
+                        <div>
+                          <span className="text-[9px] font-semibold text-indigo-400 uppercase block tracking-wider">Ringkasan Spasial</span>
+                          <p className="text-slate-300 text-xs leading-relaxed mt-0.5 font-sans">{activePage.aiAnalysis.summary}</p>
+                        </div>
+
+                        <div>
+                          <span className="text-[9px] font-semibold text-indigo-400 uppercase block tracking-wider">Kajian Dimensi</span>
+                          <p className="text-indigo-300 font-bold font-mono mt-0.5 text-xs">{activePage.aiAnalysis.dims}</p>
+                        </div>
+
+                        <div className="bg-indigo-950/40 border border-indigo-500/10 rounded-lg p-3">
+                          <span className="text-[9px] font-black text-amber-400 uppercase block mb-1 tracking-wider">Catatan Kepatuhan Lapangan:</span>
+                          <p className="text-slate-300 font-mono text-[10.5px] leading-relaxed">
+                            {activePage.aiAnalysis.notes}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Metadata Detail Summary */}
+                    <div className="bg-slate-950/60 border border-slate-850 rounded-xl p-4">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3">
+                        METADATA FILE & OTORISASI
+                      </span>
+                      <div className="grid grid-cols-2 gap-3 font-mono text-[10px] text-slate-400">
+                        <div>
+                          <span className="block text-[8px] text-slate-500 uppercase">Dokumen Induk:</span>
+                          <p className="font-bold text-slate-300 truncate" title={activeDrawing?.fileName}>
+                            {activeDrawing?.fileName || '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-500 uppercase">Skala Gambar:</span>
+                          <p className="font-bold text-slate-300">
+                            {activePage.scale || '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-500 uppercase">Kategori Gambar:</span>
+                          <p className="font-bold text-slate-300">
+                            {activePage.category || '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="block text-[8px] text-slate-500 uppercase">Versi DED:</span>
+                          <p className="font-bold text-indigo-400">
+                            {selectedVersion} {selectedVersion === (activeDrawing?.version || 'v1.0') ? '★ Terbaru' : ''}
+                          </p>
+                        </div>
+                        <div className="col-span-2 border-t border-slate-850/60 pt-2.5 mt-1">
+                          <span className="block text-[8px] text-slate-500 uppercase">Verifikator & Pengunggah:</span>
+                          <p className="text-slate-300 font-sans mt-0.5">
+                            {activeDrawing?.uploadedBy || 'Sistem SPPI'} pada {activeDrawing?.uploadedDate || '-'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Pinpoint Annotations on this Page */}
+                {activePage.comments && activePage.comments.length > 0 && (
+                  <div className="border-t border-slate-850 pt-5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3">
+                      REVISI PINPOINT TEKNIS ({activePage.comments.length})
+                    </span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {activePage.comments.slice(0, 4).map((comment) => (
+                        <div key={comment.id} className="bg-slate-950/20 border border-slate-850/60 rounded-xl p-3 flex gap-2.5">
+                          <div className="w-2 h-2 rounded-full bg-rose-500 mt-1.5 flex-shrink-0 animate-pulse" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="text-[10.5px] font-bold text-slate-200 truncate">{comment.user}</span>
+                              <span className="text-[9px] font-mono text-slate-500">{comment.date}</span>
+                            </div>
+                            <p className="text-slate-400 text-[11px] leading-relaxed break-words font-sans">{comment.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-slate-950 px-6 py-4 border-t border-slate-850 flex flex-col sm:flex-row gap-3 justify-between items-center text-slate-400">
+                <p className="text-[10px] italic text-center sm:text-left">
+                  Gambar teknik ini dilindungi hak cipta intelektual. Setiap pengunduhan atau perubahan terekam dalam sistem audit SPPI.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowDrawingDetailModal(false)}
+                  className="w-full sm:w-auto px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold cursor-pointer active:scale-95 transition"
+                >
+                  Tutup Keterangan
+                </button>
+              </div>
+
             </motion.div>
           </div>
         )}

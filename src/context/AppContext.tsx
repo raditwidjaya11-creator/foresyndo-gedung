@@ -1160,3 +1160,78 @@ export const useApp = () => {
   }
   return context;
 };
+
+// SyncGate for multi-device data syncing
+export const SyncGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isSynced, setIsSynced] = useState(false);
+
+  useEffect(() => {
+    // Override localStorage.setItem to automatically push state to server
+    if (typeof window !== 'undefined' && !(window as any).__localStorageWrapped) {
+      (window as any).__localStorageWrapped = true;
+      const originalSetItem = localStorage.setItem;
+      localStorage.setItem = function (key, value) {
+        originalSetItem.apply(this, arguments as any);
+
+        // Skip sending back if we are currently loading from the server
+        if ((window as any).__isSyncing) return;
+
+        // Sync keys belonging to the SPPI / FGI app states
+        if (key.startsWith('sppi_') || key.startsWith('fgi_')) {
+          fetch('/api/store', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, value })
+          }).catch(err => console.error('Failed to sync to server:', err));
+        }
+      };
+    }
+
+    async function syncData() {
+      try {
+        (window as any).__isSyncing = true;
+        const res = await fetch('/api/store');
+        if (res.ok) {
+          const serverStore = await res.json();
+          Object.keys(serverStore).forEach(key => {
+            let val = serverStore[key];
+            if (typeof val !== 'string') {
+              val = JSON.stringify(val);
+            }
+            localStorage.setItem(key, val);
+          });
+          console.log('Cross-device database sync complete. Keys loaded:', Object.keys(serverStore));
+        }
+      } catch (err) {
+        console.error('Error synchronizing with server database:', err);
+      } finally {
+        (window as any).__isSyncing = false;
+        setIsSynced(true);
+      }
+    }
+    syncData();
+  }, []);
+
+  if (!isSynced) {
+    return (
+      <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans">
+        <div className="relative flex flex-col items-center max-w-sm px-6 text-center">
+          {/* Pulsing indicator */}
+          <div className="w-16 h-16 rounded-full bg-indigo-600/10 border border-indigo-500/20 flex items-center justify-center mb-6">
+            <svg className="w-8 h-8 text-indigo-400 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-bold text-slate-200 mb-1">Menyelaraskan Basis Data SPPI</h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Menghubungkan ke server untuk sinkronisasi gambar, anotasi, punch-list, dan RAB antar-perangkat...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+

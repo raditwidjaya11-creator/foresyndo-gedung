@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AppProvider, useApp } from './context/AppContext';
+import { AppProvider, useApp, SyncGate } from './context/AppContext';
 import { LandingPage } from './components/LandingPage';
 import { OwnerDashboard } from './components/OwnerDashboard';
 import { ProjectManagement } from './components/ProjectManagement';
@@ -264,6 +264,39 @@ const AppShell: React.FC = () => {
               <span>Majalengka: {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB</span>
             </div>
 
+            {/* Cloud Database Sync Indicator */}
+            <button
+              onClick={async () => {
+                showToast("Menyelaraskan ulang dengan basis data cloud...", "info");
+                try {
+                  const res = await fetch('/api/store');
+                  if (res.ok) {
+                    const serverStore = await res.json();
+                    Object.keys(serverStore).forEach(key => {
+                      let val = serverStore[key];
+                      if (typeof val !== 'string') {
+                        val = JSON.stringify(val);
+                      }
+                      localStorage.setItem(key, val);
+                    });
+                    showToast("Database SPPI sinkron sepenuhnya!", "success");
+                    // Reload to let state re-initialize
+                    setTimeout(() => window.location.reload(), 800);
+                  }
+                } catch (err) {
+                  showToast("Gagal melakukan sinkronisasi database.", "error");
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 rounded-lg text-[10px] font-mono text-emerald-300 transition cursor-pointer active:scale-95"
+              title="Database tersinkronisasi antar perangkat. Klik untuk paksa refresh."
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span>DATABASE SINKRON</span>
+            </button>
+
             {/* Simulated Active Account Identity details with strict Logout control */}
             <div className="flex items-center gap-3 bg-blue-900/50 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-mono">
               <div className="flex items-center gap-1.5 border-r border-blue-500/20 pr-3">
@@ -457,8 +490,10 @@ const AppShell: React.FC = () => {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppShell />
-    </AppProvider>
+    <SyncGate>
+      <AppProvider>
+        <AppShell />
+      </AppProvider>
+    </SyncGate>
   );
 }

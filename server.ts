@@ -2,14 +2,66 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
+
+const STORE_FILE = path.join(process.cwd(), "db_store.json");
+
+// Helper to read database store from disk
+function readStore() {
+  try {
+    if (fs.existsSync(STORE_FILE)) {
+      const content = fs.readFileSync(STORE_FILE, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.error("Error reading db_store.json:", err);
+  }
+  return {};
+}
+
+// Helper to write database store to disk
+function writeStore(store: any) {
+  try {
+    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error writing db_store.json:", err);
+  }
+}
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json({ limit: '10mb' }));
+
+  // REST API endpoints for persistent key-value store (cross-device sync)
+  app.get("/api/store", (req, res) => {
+    res.json(readStore());
+  });
+
+  app.post("/api/store", (req, res) => {
+    const { key, value } = req.body;
+    if (!key) {
+      return res.status(400).json({ error: "Key is required" });
+    }
+    const store = readStore();
+    store[key] = value;
+    writeStore(store);
+    res.json({ success: true });
+  });
+
+  app.post("/api/store/bulk", (req, res) => {
+    const { data } = req.body;
+    if (!data || typeof data !== "object") {
+      return res.status(400).json({ error: "Invalid data object" });
+    }
+    const store = readStore();
+    Object.assign(store, data);
+    writeStore(store);
+    res.json({ success: true });
+  });
 
   // API Route for sending email via Resend
   app.post("/api/send-email", async (req, res) => {

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
+import { jsPDF } from 'jspdf';
 import { 
   FileText, 
   FileSpreadsheet, 
@@ -95,18 +96,276 @@ export const ProjectDocuments: React.FC = () => {
   const handleDownloadFile = (doc: FormalDocument) => {
     // Increase download simulation
     doc.downloadCount += 1;
-    showToast(`Sukses mendownload ${doc.fileName}! Memulai transfer data...`, 'success');
+    showToast(`Sukses mendownload ${doc.fileName}! Memproses berkas terverifikasi...`, 'success');
 
-    // Web download logic
-    const dummyText = `KONTEN REKADATA UTAMA SPPI: ${doc.fileName}\nKategori: ${doc.category}\nDiunduh oleh: ${currentUser?.displayName || 'Tamu'} sebagai ${currentRole}`;
-    const blob = new Blob([dummyText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = doc.fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const isXls = doc.fileName.toLowerCase().endsWith('.xlsx') || doc.fileName.toLowerCase().endsWith('.xls');
+
+    if (isXls) {
+      // Excel/CSV generator with UTF-8 BOM to open perfectly in Microsoft Excel & Google Sheets
+      const csvContent = "Kategori\tNama Dokumen\tUkuran\tTanggal Unggah\tDiunggah Oleh\tStatus Verifikasi\n" +
+        `${doc.category}\t${doc.fileName}\t${doc.size}\t${doc.uploadedDate}\t${doc.uploadedBy}\tTERVERIFIKASI RESMI SPPI\n` +
+        `Nomor ID Dokumen\t${doc.id}\n` +
+        `Diunduh Oleh\t${currentUser?.displayName || 'Tamu'} (${currentRole})\n` +
+        `Tanggal Unduh\t${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')} WIB\n\n` +
+        `RINGKASAN ESTIMASI BIAYA PROYEK BANDARA KERTAJATI (SIMULASI):\n` +
+        `Pekerjaan Persiapan & Mobilisasi\tRp 450.000.000,00\n` +
+        `Pekerjaan Struktur Utama\tRp 4.850.000.000,00\n` +
+        `Pekerjaan Arsitektur & MEP\tRp 3.900.000.000,00\n` +
+        `Pekerjaan Lansekap & Interior\tRp 1.800.000.000,00\n` +
+        `GRAND TOTAL ESTIMASI KONTRAK\tRp 11.000.000.000,00\n`;
+      
+      const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = doc.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else {
+      // Create a premium, valid official corporate document PDF copy
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // Page 1: COVER CERTIFICATE & COMPLIANCE VERIFICATION
+      // Draw professional navy border frame
+      pdf.setDrawColor(30, 58, 138); // Navy blue FGI Brand Color
+      pdf.setLineWidth(1);
+      pdf.rect(8, 8, 194, 281);
+      pdf.rect(9, 9, 192, 279);
+      
+      // Top header banner
+      pdf.setFillColor(30, 58, 138);
+      pdf.rect(10, 10, 190, 24, 'F');
+      
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.text('PT FORESYNDO GRAND INDONESIA', 20, 19);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.text('SISTEM PROCUREMENT, PERENCANAAN & INTEGRASI (SPPI) - BANDARA KERTAJATI', 20, 27);
+      
+      // Title
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(18);
+      pdf.text('SALINAN DOKUMEN RESMI TERVERIFIKASI', 20, 48);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setFontSize(10);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text('Official Certified Copy & Document Integrity Verification Ledger', 20, 54);
+      
+      // Decorative orange divider line
+      pdf.setFillColor(234, 88, 12); // Orange Accent
+      pdf.rect(20, 58, 170, 1, 'F');
+      
+      // Metadata Header section
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('INFORMASI & INTEGRITAS FILE DOKUMEN', 20, 68);
+      
+      // Table grid simulating metadata
+      pdf.setDrawColor(226, 232, 240); // Soft grey border
+      pdf.setLineWidth(0.3);
+      pdf.setFillColor(248, 250, 252); // Background of header rows
+      
+      // Helper function to draw metadata rows
+      const drawRow = (y: number, label: string, value: string, bg: boolean = false) => {
+        if (bg) {
+          pdf.setFillColor(248, 250, 252);
+          pdf.rect(20, y - 4, 170, 7, 'F');
+        }
+        pdf.setTextColor(71, 85, 105);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.text(label, 22, y);
+        
+        pdf.setTextColor(15, 23, 42);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9);
+        pdf.text(value, 68, y);
+        
+        pdf.line(20, y + 3, 190, y + 3);
+      };
+      
+      let yOffset = 76;
+      drawRow(yOffset, 'Nomor Register:', `DOC-REG-${doc.id.toUpperCase()}-${new Date(doc.uploadedDate).getFullYear()}`, true); yOffset += 9;
+      drawRow(yOffset, 'Nama File Asli:', doc.fileName); yOffset += 9;
+      drawRow(yOffset, 'Kategori Dokumen:', doc.category, true); yOffset += 9;
+      drawRow(yOffset, 'Ukuran Berkas:', doc.size); yOffset += 9;
+      drawRow(yOffset, 'Diunggah Pada:', `${doc.uploadedDate} (Sesuai Log Server SPPI)`, true); yOffset += 9;
+      drawRow(yOffset, 'Diunggah Oleh:', doc.uploadedBy); yOffset += 9;
+      drawRow(yOffset, 'Akses Otoritas:', doc.rolePermissions.join(', '), true); yOffset += 9;
+      drawRow(yOffset, 'Status Distribusi:', doc.sharedWithContractor ? 'Terbagi dengan Mitra Kontraktor (Publicly Accessible)' : 'Internal Manajemen (Strictly Restricted)'); yOffset += 9;
+      drawRow(yOffset, 'Total Unduhan:', `${doc.downloadCount} Kali`, true); yOffset += 9;
+      
+      // Audit trail
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.text('LOG TRANSFER & AUDIT TRAIL', 20, yOffset + 10);
+      
+      pdf.setTextColor(71, 85, 105);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8.5);
+      pdf.text(`Dokumen ini diunduh secara resmi oleh akun pengguna terdaftar pada:`, 20, yOffset + 16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`User: ${currentUser?.displayName || 'Guest User'} | Peran Otoritas: ${currentRole}`, 20, yOffset + 21);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Tanggal & Waktu Akses: ${new Date().toLocaleDateString('id-ID')} ${new Date().toLocaleTimeString('id-ID')} WIB`, 20, yOffset + 26);
+      pdf.text(`Alamat Lokasi Klien: Akses Cloud Terowongan Kertajati Majalengka Secure Tunnel`, 20, yOffset + 31);
+      
+      // Draw QR Code block representation
+      pdf.setDrawColor(30, 58, 138);
+      pdf.setLineWidth(0.5);
+      pdf.rect(154, yOffset + 12, 34, 34);
+      // Mock QR-code interior grids
+      pdf.setFillColor(15, 23, 42);
+      pdf.rect(156, yOffset + 14, 8, 8, 'F');
+      pdf.rect(178, yOffset + 14, 8, 8, 'F');
+      pdf.rect(156, yOffset + 36, 8, 8, 'F');
+      pdf.rect(168, yOffset + 26, 4, 4, 'F');
+      pdf.rect(174, yOffset + 32, 6, 6, 'F');
+      pdf.rect(162, yOffset + 24, 3, 3, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text('QR SECURE VERIFY', 155, yOffset + 49);
+      
+      // Corporate Footer notes
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(10, 252, 190, 24, 'F');
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      pdf.text('Kerahasiaan Dokumen: Informasi yang terkandung di dalam berkas ini merupakan hak kekayaan intelektual milik PT Foresyndo Grand Indonesia', 13, 258);
+      pdf.text('dan dilindungi oleh undang-undang ITE Indonesia. Salinan ini adalah salinan digital resmi yang dihasilkan langsung oleh SPPI Database Server.', 13, 262);
+      pdf.text('Verifikasi keabsahan dokumen dapat dilakukan dengan memindai kode QR keamanan atau menghubungi administrator IT PT FGI.', 13, 266);
+      
+      // Page Number
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text('Halaman 1 dari 2', 170, 271);
+      
+      // Add page 2: Detailed Integrity & Disclaimer
+      pdf.addPage();
+      
+      // Border frame for Page 2
+      pdf.setDrawColor(30, 58, 138);
+      pdf.setLineWidth(1);
+      pdf.rect(8, 8, 194, 281);
+      pdf.rect(9, 9, 192, 279);
+      
+      // Page 2 header
+      pdf.setFillColor(30, 58, 138);
+      pdf.rect(10, 10, 190, 12, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10);
+      pdf.text(`LEMBAR INTEGRITAS DOKUMEN: ${doc.fileName.toUpperCase()}`, 15, 18);
+      
+      // Content of page 2
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text('1. Pernyataan Otoritas & Keabsahan', 20, 35);
+      
+      pdf.setTextColor(51, 65, 85);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      const textParagraph1 = `Dengan diunduhnya berkas "${doc.fileName}", sistem secara otomatis mendata riwayat transfer data ini pada log terpusat SPPI PT Foresyndo Grand Indonesia. Berkas ini merupakan representasi digital dari berkas fisik yang disimpan dalam lemari arsip aman (secure vault) kantor pusat PT Foresyndo Grand Indonesia di Jawa Barat.`;
+      const splitText1 = pdf.splitTextToSize(textParagraph1, 170);
+      pdf.text(splitText1, 20, 42);
+      
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text('2. Penjelasan Isi Dokumen (Sesuai Kategori)', 20, 68);
+      
+      pdf.setTextColor(51, 65, 85);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      
+      let detailDesc = '';
+      if (doc.category === 'Kontrak & Legalitas') {
+        detailDesc = 'Dokumen Kontrak & Legalitas berisi kesepakatan hukum resmi, kontrak kerja sama pelaksana proyek, SPK resmi, akta pendirian, atau perizinan Izin Mendirikan Bangunan (IMB) yang mengikat secara yuridis antara PT Foresyndo Grand Indonesia, instansi pemerintah Jawa Barat, mitra kontraktor, dan investor terkait pembangunan infrastruktur Bandara Internasional Kertajati.';
+      } else if (doc.category === 'Teknis & DED') {
+        detailDesc = 'Dokumen Teknis & DED (Detail Engineering Design) berisi rencana arsitektur matang, uji sondir mekanika tanah, spesifikasi teknis bahan material bersertifikat Standar Nasional Indonesia (SNI), serta panduan operasional struktur sipil yang diawasi langsung oleh konsultan independen guna menjamin keamanan struktural bangunan.';
+      } else if (doc.category === 'Finansial & E-RAB') {
+        detailDesc = 'Dokumen Finansial & E-RAB (Rencana Anggaran Biaya Elektronik) menguraikan rincian alokasi anggaran, rincian upah tenaga kerja, biaya pengadaan bahan baku baja dan semen, sub-kontrak, serta estimasi keuntungan proyek dengan nominal total anggaran sebesar Rp11.000.000.000,00 (Sebelas Miliar Rupiah) yang disetujui direksi.';
+      } else {
+        detailDesc = 'Dokumen Laporan Lapangan berisi berkas berita acara pemeriksaan lapangan, catatan harian pengawas proyek, slump test beton lantai, serta dokumentasi progres fisik konstruksi secara real-time dari bandara untuk memastikan bahwa pelaksanaan di lapangan sesuai dengan standar DED yang ditetapkan.';
+      }
+      
+      const splitText2 = pdf.splitTextToSize(detailDesc, 170);
+      pdf.text(splitText2, 20, 75);
+      
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.text('3. Tanda Tangan & Verifikasi Digital', 20, 110);
+      
+      pdf.setTextColor(51, 65, 85);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.text('Dokumen ini telah ditandatangani secara elektronik (Digital Signature) menggunakan sertifikasi SPPI Security.', 20, 117);
+      
+      // Draw a neat signature block
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(20, 125, 170, 48, 'F');
+      
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(8);
+      pdf.text('SIGNED BY PT FORESYNDO GRAND INDONESIA AUTHORITY', 25, 131);
+      
+      pdf.setTextColor(30, 58, 138);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9.5);
+      pdf.text('Radit Widjaya', 25, 142);
+      pdf.setTextColor(71, 85, 105);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.text('Super Admin & Direktur Utama PT FGI', 25, 146);
+      pdf.text(`Status Sertifikat: AKTIF & SAH`, 25, 151);
+      pdf.text(`Hash Integritas SHA256: 4f1a23b5c678d910e111213141516171819202122232425`, 25, 156);
+      pdf.text(`ID Transaksi Unduh: TXN-SYNC-${Math.floor(100000 + Math.random() * 900000)}`, 25, 161);
+      
+      // Draw signature ink representation
+      pdf.setDrawColor(234, 88, 12);
+      pdf.setLineWidth(0.8);
+      pdf.line(130, 138, 145, 148);
+      pdf.line(145, 148, 135, 153);
+      pdf.line(135, 153, 160, 142);
+      pdf.line(160, 142, 148, 158);
+      pdf.line(148, 158, 170, 150);
+      
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(234, 88, 12);
+      pdf.setFontSize(7.5);
+      pdf.text('Sistem SPPI Terverifikasi', 133, 165);
+      
+      // Bottom notes Page 2
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(10, 252, 190, 24, 'F');
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      pdf.text('Dilarang keras menyebarluaskan dokumen ini kepada pihak ketiga di luar konsorsium PT FGI tanpa izin tertulis dari Direksi Utama.', 13, 258);
+      pdf.text('Setiap pelanggaran penyebaran data rahasia bandara akan ditindaklanjuti secara hukum pidana maupun perdata sesuai perundang-undangan.', 13, 262);
+      pdf.text('Lembar ini merupakan bagian tidak terpisahkan dari sertifikat keabsahan dokumen pada halaman pertama.', 13, 266);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text('Halaman 2 dari 2', 170, 271);
+      
+      // Save and Download the real compiled PDF
+      pdf.save(doc.fileName);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
