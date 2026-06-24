@@ -13,6 +13,7 @@ import { LoginPortal } from './components/LoginPortal';
 import { AccountsManager } from './components/AccountsManager';
 import { DrawingViewer } from './components/DrawingViewer';
 import { ProjectDocuments } from './components/ProjectDocuments';
+import { WeatherWidget } from './components/WeatherWidget';
 import { 
   Building, 
   MapPin, 
@@ -263,6 +264,9 @@ const AppShell: React.FC = () => {
               <Clock className="w-3.5 h-3.5 text-orange-400" />
               <span>Majalengka: {new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB</span>
             </div>
+
+            {/* Jatitujuh Majalengka Real-Time Weather Widget */}
+            <WeatherWidget />
 
             {/* Cloud Database Sync Indicator */}
             <button
