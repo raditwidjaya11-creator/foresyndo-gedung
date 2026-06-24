@@ -10,6 +10,10 @@ import {
   Minimize2, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronUp,
+  ChevronDown,
+  Move,
+  Home,
   MessageSquare, 
   Sparkles, 
   Plus, 
@@ -32,7 +36,8 @@ import {
   RotateCcw,
   EyeOff,
   PenTool,
-  Download
+  Download,
+  Lock
 } from 'lucide-react';
 import { DrawingFile, DrawingPage, DrawingComment, UserRole } from '../types';
 
@@ -48,6 +53,8 @@ export const DrawingViewer: React.FC = () => {
     currentUser,
     showToast 
   } = useApp();
+
+  const isAuthorizedToAnnotate = ['Super Admin', 'Owner', 'Project Manager', 'Konsultan'].includes(currentRole);
 
   // Active files and sheets state
   const [activeDrawingId, setActiveDrawingId] = useState<string>(
@@ -69,8 +76,11 @@ export const DrawingViewer: React.FC = () => {
     }
   }, [drawingFiles, activeDrawingId]);
   const [zoomLevel, setZoomLevel] = useState<number>(1); // e.g. 1 = 100%, 1.5 = 150%
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
-  const [activeTabPanel, setActiveTabPanel] = useState<'ai' | 'comments' | 'history'>('ai');
+  const [activeTabPanel, setActiveTabPanel] = useState<'detail' | 'ai' | 'comments' | 'history'>('detail');
 
   // New Upload Form State
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
@@ -157,6 +167,7 @@ export const DrawingViewer: React.FC = () => {
   const [annotationsVisible, setAnnotationsVisible] = useState<boolean>(true);
   const [imageBounds, setImageBounds] = useState<{ width: number; height: number }>({ width: 750, height: 480 });
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
+  const [isExportingViewPDF, setIsExportingViewPDF] = useState<boolean>(false);
 
   const pageKey = `${activeDrawingId}_${activePageNum}`;
 
@@ -323,6 +334,7 @@ export const DrawingViewer: React.FC = () => {
 
   // CANVAS DRAWING MOUSE EVENTS
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isAuthorizedToAnnotate) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -344,6 +356,7 @@ export const DrawingViewer: React.FC = () => {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isAuthorizedToAnnotate) return;
     if (!isDrawing || annotationMode === 'none' || annotationMode === 'sticky') return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -380,6 +393,7 @@ export const DrawingViewer: React.FC = () => {
 
   // TOUCH SUPPORT FOR CANVAS
   const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isAuthorizedToAnnotate) return;
     if (annotationMode === 'none' || e.touches.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -403,6 +417,7 @@ export const DrawingViewer: React.FC = () => {
   };
 
   const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isAuthorizedToAnnotate) return;
     if (!isDrawing || annotationMode === 'none' || annotationMode === 'sticky' || e.touches.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -553,10 +568,84 @@ export const DrawingViewer: React.FC = () => {
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
-  // Zoom handlers
-  const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.25, 3));
-  const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.25, 0.75));
-  const handleZoomReset = () => setZoomLevel(1);
+  // Zoom and Pan handlers
+  const handleZoomIn = () => setZoomLevel(prev => Math.min(prev + 0.25, 4));
+  const handleZoomOut = () => setZoomLevel(prev => Math.max(prev - 0.25, 0.4));
+  const handleZoomReset = () => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handlePan = (direction: 'up' | 'down' | 'left' | 'right') => {
+    const step = 60;
+    setPanOffset(prev => {
+      switch (direction) {
+        case 'up': return { ...prev, y: prev.y + step };
+        case 'down': return { ...prev, y: prev.y - step };
+        case 'left': return { ...prev, x: prev.x + step };
+        case 'right': return { ...prev, x: prev.x - step };
+        default: return prev;
+      }
+    });
+  };
+
+  const handleWheelZoom = (e: React.WheelEvent<HTMLDivElement>) => {
+    // Only zoom on wheel if we are not drawing or placing a pin
+    if (annotationMode !== 'none' || isPlacingPin) return;
+    
+    // Check if Ctrl key is pressed or just scroll wheel to zoom (Ctrl is standard but direct scroll is simpler and more intuitive in this frame)
+    e.preventDefault();
+    const zoomIntensity = 0.1;
+    const delta = e.deltaY < 0 ? 1 : -1;
+    setZoomLevel(prev => {
+      const nextZoom = prev + delta * zoomIntensity;
+      return Math.max(0.4, Math.min(nextZoom, 4));
+    });
+  };
+
+  const handleWrapperMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (annotationMode !== 'none' || isPlacingPin || e.button !== 0) return;
+    setIsPanning(true);
+    setPanStart({
+      x: e.clientX - panOffset.x,
+      y: e.clientY - panOffset.y
+    });
+  };
+
+  const handleWrapperMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isPanning) return;
+    setPanOffset({
+      x: e.clientX - panStart.x,
+      y: e.clientY - panStart.y
+    });
+  };
+
+  const handleWrapperMouseUp = () => {
+    setIsPanning(false);
+  };
+
+  const handleWrapperTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (annotationMode !== 'none' || isPlacingPin || e.touches.length !== 1) return;
+    setIsPanning(true);
+    const touch = e.touches[0];
+    setPanStart({
+      x: touch.clientX - panOffset.x,
+      y: touch.clientY - panOffset.y
+    });
+  };
+
+  const handleWrapperTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isPanning || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    setPanOffset({
+      x: touch.clientX - panStart.x,
+      y: touch.clientY - panStart.y
+    });
+  };
+
+  const handleWrapperTouchEnd = () => {
+    setIsPanning(false);
+  };
 
   // Convert img to base64 safely 
   const getBase64Image = (imgUrl: string): Promise<string> => {
@@ -917,8 +1006,531 @@ export const DrawingViewer: React.FC = () => {
     }
   };
 
+  // Export current view tab data as beautifully branded PDF report
+  const handleExportCurrentViewPDF = async () => {
+    if (!activeDrawing || !activePage) {
+      showToast('Tidak ada data gambar aktif untuk diekspor!', 'error');
+      return;
+    }
+
+    setIsExportingViewPDF(true);
+    showToast(`Sedang menyusun laporan internal untuk tab "${activeTabPanel === 'detail' ? 'Detail & Spek' : activeTabPanel === 'ai' ? 'Asisten AI' : activeTabPanel === 'comments' ? 'Komentar' : 'Riwayat'}"...`, 'info');
+
+    try {
+      // Create jsPDF in Portrait orientation, A4 format
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = 210;
+      const pageHeight = 297;
+
+      // Helper for diagonal background watermark
+      const drawWatermark = (pdfDoc: jsPDF) => {
+        // @ts-ignore
+        if (typeof pdfDoc.GState === 'function') {
+          // @ts-ignore
+          pdfDoc.setGState(new pdfDoc.GState({ opacity: 0.04 }));
+        }
+        pdfDoc.setTextColor(226, 232, 240); // slate-200 (subtle background watermark)
+        pdfDoc.setFont('helvetica', 'bold');
+        pdfDoc.setFontSize(26);
+        // Draw diagonal watermark
+        pdfDoc.text('TIM TEKNIS SPPI - INTERNAL ONLY', pageWidth / 2, pageHeight / 2, {
+          align: 'center',
+          angle: 45
+        });
+        // Reset opacity back to 1.0 immediately
+        // @ts-ignore
+        if (typeof pdfDoc.GState === 'function') {
+          // @ts-ignore
+          pdfDoc.setGState(new pdfDoc.GState({ opacity: 1.0 }));
+        }
+      };
+
+      // Header Drawer Helper
+      const drawHeader = (pdfDoc: jsPDF, pageNum: number, totalPages: number) => {
+        // Corporate Top Border Band
+        pdfDoc.setFillColor(30, 58, 138); // Deep Navy
+        pdfDoc.rect(10, 10, pageWidth - 20, 1.5, 'F');
+
+        // Brand Sub-Header
+        pdfDoc.setFont('helvetica', 'bold');
+        pdfDoc.setFontSize(8);
+        pdfDoc.setTextColor(30, 58, 138);
+        pdfDoc.text('SISTEM PENJAMINAN MUTU KONSTRUKSI (SPPI)', 12, 16);
+
+        pdfDoc.setFont('helvetica', 'normal');
+        pdfDoc.setFontSize(7);
+        pdfDoc.setTextColor(100, 116, 139);
+        pdfDoc.text('REKONSILIASI DED & MONITORING LAPANGAN ELEKTRONIK', 12, 20);
+
+        pdfDoc.setFont('helvetica', 'bold');
+        pdfDoc.setFontSize(7);
+        pdfDoc.setTextColor(234, 88, 12); // Orange Accent
+        pdfDoc.text(`HALAMAN ${pageNum} DARI ${totalPages}`, pageWidth - 12, 16, { align: 'right' });
+
+        pdfDoc.setFont('helvetica', 'normal');
+        pdfDoc.setFontSize(7);
+        pdfDoc.setTextColor(148, 163, 184);
+        pdfDoc.text(`REG: ${activeDrawing.id.substring(0,8).toUpperCase()}-${activePage.id.substring(0,4).toUpperCase()}`, pageWidth - 12, 20, { align: 'right' });
+
+        // Thin Separator line
+        pdfDoc.setDrawColor(226, 232, 240); // slate-200
+        pdfDoc.setLineWidth(0.3);
+        pdfDoc.line(10, 22, pageWidth - 10, 22);
+
+        // Watermark background
+        drawWatermark(pdfDoc);
+      };
+
+      // Footer Drawer Helper
+      const drawFooter = (pdfDoc: jsPDF) => {
+        pdfDoc.setDrawColor(241, 245, 249);
+        pdfDoc.setLineWidth(0.3);
+        pdfDoc.line(10, pageHeight - 15, pageWidth - 10, pageHeight - 15);
+
+        pdfDoc.setFont('helvetica', 'normal');
+        pdfDoc.setFontSize(6.5);
+        pdfDoc.setTextColor(148, 163, 184);
+        pdfDoc.text('Dokumen audit internal tim teknis SPPI. Seluruh spesifikasi arsitektur dan gambar kerja dilindungi hak kekayaan intelektual proyek.', 12, pageHeight - 11);
+        pdfDoc.text(`Waktu Cetak: ${new Date().toLocaleString('id-ID')} | Operator: ${currentRole}`, 12, pageHeight - 7);
+
+        // Security stamp
+        pdfDoc.setFillColor(248, 250, 252);
+        pdfDoc.setDrawColor(226, 232, 240);
+        pdfDoc.rect(pageWidth - 45, pageHeight - 13, 33, 7, 'FD');
+        pdfDoc.setFont('helvetica', 'bold');
+        pdfDoc.setFontSize(5.5);
+        pdfDoc.setTextColor(16, 185, 129); // emerald-500
+        pdfDoc.text('SPPI SECURE VERIFIED ✓', pageWidth - 45 + 16.5, pageHeight - 13 + 4.5, { align: 'center' });
+      };
+
+      // Initial Watermark on page 1
+      drawWatermark(doc);
+
+      // Title Block
+      doc.setFillColor(30, 58, 138); // Primary navy
+      doc.rect(10, 10, pageWidth - 20, 18, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('LAPORAN TEKNIS INTERNAL & DOKUMENTASI VIEW', 15, 17);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(226, 232, 240);
+      doc.text(`Proyek: PEMBANGUNAN KOST JATI TUJUH MAJALENGKA | Cetak: ${new Date().toLocaleDateString('id-ID')}`, 15, 23);
+
+      // Sub-Title Section based on active tab
+      let docTitle = '';
+      let docDesc = '';
+      if (activeTabPanel === 'detail') {
+        docTitle = 'LAPORAN SPESIFIKASI TEKNIS & METADATA GAMBAR KERJA';
+        docDesc = 'Dokumen ini merangkum detail deskripsi struktural arsitektural beserta spesifikasi teknis lapangan yang wajib dipenuhi oleh kontraktor pelaksana.';
+      } else if (activeTabPanel === 'ai') {
+        docTitle = 'LAPORAN DIALOG KONSULTASI & KAJIAN SPASIAL ASISTEN AI';
+        docDesc = 'Dokumen ini berisi hasil pembacaan kecerdasan buatan terhadap gambar DED, disertai transkrip interaksi tanya jawab peninjauan teknis.';
+      } else if (activeTabPanel === 'comments') {
+        docTitle = 'LAPORAN DAFTAR PUNCH LIST & PINPOINT STAKEHOLDER';
+        docDesc = 'Daftar temuan, saran koreksi arsitektural, dan pinpoint memo koordinat yang diletakkan oleh pengawas dan pemilik di atas lembar gambar kerja.';
+      } else if (activeTabPanel === 'history') {
+        docTitle = 'LAPORAN AUDIT TRAIL REVISI & RIWAYAT VERSI DED';
+        docDesc = 'Silsilah kronologis perbaikan lembar gambar kerja sejak inisiasi awal, lengkap dengan keterangan perubahan dan pelaksana yang mengunggah.';
+      }
+
+      doc.setTextColor(30, 41, 59); // slate-800
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text(docTitle, 10, 40);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105); // slate-600
+      // Text wrap for description
+      const splitDesc = doc.splitTextToSize(docDesc, pageWidth - 20);
+      doc.text(splitDesc, 10, 45);
+
+      // Parameters Table
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(10, 54, pageWidth - 20, 28, 'FD');
+
+      doc.setTextColor(30, 58, 138);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text('IDENTITAS LEMBAR GAMBAR:', 14, 59);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(7.5);
+
+      doc.setFont('helvetica', 'bold'); doc.text('Kode Lembar:', 14, 65); doc.setFont('helvetica', 'normal');
+      doc.text(`${activePage.pageCode}`, 34, 65);
+
+      doc.setFont('helvetica', 'bold'); doc.text('Judul Lembar:', 14, 70); doc.setFont('helvetica', 'normal');
+      doc.text(`${activePage.title}`, 34, 70);
+
+      doc.setFont('helvetica', 'bold'); doc.text('Kategori DED:', 14, 75); doc.setFont('helvetica', 'normal');
+      doc.text(`${activePage.category} (Skala ${activePage.scale || '1:100'})`, 34, 75);
+
+      doc.setFont('helvetica', 'bold'); doc.text('Dokumen Induk:', 110, 65); doc.setFont('helvetica', 'normal');
+      doc.text(`${activeDrawing.fileName}`, 134, 65);
+
+      doc.setFont('helvetica', 'bold'); doc.text('Versi Terpilih:', 110, 70); doc.setFont('helvetica', 'normal');
+      doc.text(`${selectedVersion} (${selectedVersion === (activeDrawing.version || 'v1.0') ? 'Terbaru' : 'Arsip'})`, 134, 70);
+
+      doc.setFont('helvetica', 'bold'); doc.text('Operator Pengarah:', 110, 75); doc.setFont('helvetica', 'normal');
+      doc.text(`${currentRole}`, 134, 75);
+
+      let curY = 88;
+
+      // 1. DETAIL TAB EXPORT
+      if (activeTabPanel === 'detail') {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('I. DESKRIPSI TEKNIS STRUKTURAL', 10, curY);
+        curY += 4;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(51, 65, 85);
+        const detailedDesc = activePage.description || 'Gambar penjelasan teknik penunjang kelengkapan Detail Engineering Design (DED) untuk pengerjaan kost jati tujuh.';
+        const splitDetailedDesc = doc.splitTextToSize(detailedDesc, pageWidth - 20);
+        doc.text(splitDetailedDesc, 10, curY);
+        curY += (splitDetailedDesc.length * 4) + 6;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('II. DAFTAR SPESIFIKASI KONSTRUKSI LAPANGAN', 10, curY);
+        curY += 3;
+
+        const specItems = activePage.specifications && activePage.specifications.length > 0
+          ? activePage.specifications.map((spec, ix) => [`${ix + 1}`, spec, 'TERVERIFIKASI ✓'])
+          : [['-', 'Belum ada spesifikasi tertulis rinci untuk lembar arsitektur ini.', '-']];
+
+        autoTable(doc, {
+          head: [['No', 'Uraian Parameter Spesifikasi Lapangan & Kebutuhan Mutu', 'Status Kepatuhan']],
+          body: specItems,
+          startY: curY,
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: 8, cellPadding: 2.5 },
+          headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 10, fontStyle: 'bold', halign: 'center' },
+            1: { cellWidth: 145 },
+            2: { cellWidth: 35, fontStyle: 'bold', textColor: [16, 185, 129], halign: 'center' }
+          },
+          theme: 'grid'
+        });
+
+        // @ts-ignore
+        curY = doc.lastAutoTable.finalY + 12;
+
+        // Visual layout stamp
+        if (curY > 210) {
+          doc.addPage();
+          drawWatermark(doc);
+          curY = 25;
+        }
+
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(30, 58, 138);
+        doc.setLineWidth(0.3);
+        doc.rect(10, curY, pageWidth - 20, 25, 'FD');
+
+        doc.setTextColor(30, 58, 138);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('INSTRUKSI PELAKSANAAN REKLAMASI & METODE PENGERJAAN:', 14, curY + 5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text('1. Seluruh pekerjaan konstruksi fisik wajib mengacu kepada lembar DED di atas secara mutlak.', 14, curY + 10);
+        doc.text('2. Penyimpangan ukuran dimensi lapangan lebih dari 1.5 cm tanpa izin tertulis Konsultan Pengawas akan didenda.', 14, curY + 14);
+        doc.text('3. Catat seluruh deviasi di dalam lembar as-built drawing terpisah untuk audit akhir komisioning.', 14, curY + 18);
+      }
+
+      // 2. AI TAB EXPORT
+      else if (activeTabPanel === 'ai') {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('I. METODE PENILAIAN TEKNIS OTOMATIS ASISTEN AI', 10, curY);
+        curY += 4;
+
+        // Custom auto table with AI metrics
+        const aiMetrics = [
+          ['Kategori Pendekatan AI', activePage.aiAnalysis.type],
+          ['Kajian Dimensi Spasial', activePage.aiAnalysis.dims],
+          ['Catatan Diskusi Konstruksi', activePage.aiAnalysis.notes],
+        ];
+
+        autoTable(doc, {
+          body: aiMetrics,
+          startY: curY,
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: 8, cellPadding: 3 },
+          columnStyles: {
+            0: { cellWidth: 45, fontStyle: 'bold', fillColor: [248, 250, 252], textColor: [30, 58, 138] },
+            1: { cellWidth: 145 }
+          },
+          theme: 'grid'
+        });
+
+        // @ts-ignore
+        curY = doc.lastAutoTable.finalY + 8;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(15, 23, 42);
+        doc.text('Ringkasan Spasial Deteksi AI:', 10, curY);
+        curY += 4;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(51, 65, 85);
+        const splitSummary = doc.splitTextToSize(activePage.aiAnalysis.summary, pageWidth - 20);
+        doc.text(splitSummary, 10, curY);
+        curY += (splitSummary.length * 4) + 10;
+
+        if (curY > 210) {
+          doc.addPage();
+          drawWatermark(doc);
+          curY = 25;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('II. TRANSKRIP KONSULTASI INTERAKTIF CHAT AI', 10, curY);
+        curY += 4;
+
+        // AI Chat transcripts
+        const chatRows = chatMessages.map((msg, ix) => [
+          `${ix + 1}`,
+          msg.sender === 'user' ? 'STAKEHOLDER / USER' : 'AI ASISTEN GAMBAR',
+          msg.time,
+          msg.text
+        ]);
+
+        autoTable(doc, {
+          head: [['Ref', 'Pengirim', 'Waktu', 'Pernyataan / Jawaban Teknis']],
+          body: chatRows,
+          startY: curY,
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: 7.5, cellPadding: 2 },
+          headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 35, fontStyle: 'bold' },
+            2: { cellWidth: 20, fontStyle: 'italic', halign: 'center' },
+            3: { cellWidth: 125 }
+          },
+          theme: 'grid'
+        });
+      }
+
+      // 3. COMMENTS TAB EXPORT
+      else if (activeTabPanel === 'comments') {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('I. KOMENTAR PINPOINT MARKUP KOLABORATIF', 10, curY);
+        curY += 4;
+
+        const commentRows = activePage.comments && activePage.comments.length > 0
+          ? activePage.comments.map((c, ix) => [
+              `P${ix + 1}`,
+              c.pin ? `X:${Math.round(c.pin.x)}%, Y:${Math.round(c.pin.y)}%` : 'Umum',
+              c.sender,
+              c.role === 'owner' ? 'Owner' : c.role === 'contractor' ? 'Kontraktor' : 'Konsultan',
+              c.time,
+              c.text
+            ])
+          : [['-', '-', '-', '-', '-', 'Belum ada pinpoint review dari pihak stakeholder.']];
+
+        autoTable(doc, {
+          head: [['Ref', 'Koordinat', 'Stakeholder', 'Sektor Peran', 'Waktu', 'Catatan Penilaian Evaluasi']],
+          body: commentRows,
+          startY: curY,
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: 7.5, cellPadding: 2 },
+          headStyles: { fillColor: [30, 58, 138], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 10, fontStyle: 'bold', halign: 'center' },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 25 },
+            4: { cellWidth: 20, halign: 'center' },
+            5: { cellWidth: 90 }
+          },
+          theme: 'grid'
+        });
+
+        // @ts-ignore
+        curY = doc.lastAutoTable.finalY + 10;
+
+        if (curY > 190) {
+          doc.addPage();
+          drawWatermark(doc);
+          curY = 25;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('II. CATATAN MEMO TEMPUNG KOREKSI GAMBAR', 10, curY);
+        curY += 4;
+
+        const stickyRows = pageAnnotations.stickyNotes && pageAnnotations.stickyNotes.length > 0
+          ? pageAnnotations.stickyNotes.map((n, ix) => [
+              `M${ix + 1}`,
+              `X:${Math.round(n.x)}%, Y:${Math.round(n.y)}%`,
+              n.color.toUpperCase(),
+              n.author,
+              n.date,
+              n.text
+            ])
+          : [['-', '-', '-', '-', '-', 'Belum ada catatan tempel (memo sticky) yang dipasang pada lembar ini.']];
+
+        autoTable(doc, {
+          head: [['Ref', 'Posisi', 'Kategori', 'Author', 'Tanggal', 'Instruksi Revisi & Memo Deskripsi']],
+          body: stickyRows,
+          startY: curY,
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: 7.5, cellPadding: 2 },
+          headStyles: { fillColor: [245, 158, 11], textColor: [15, 23, 42], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 10, fontStyle: 'bold', halign: 'center' },
+            1: { cellWidth: 20, halign: 'center' },
+            2: { cellWidth: 20, halign: 'center' },
+            3: { cellWidth: 30 },
+            4: { cellWidth: 20, halign: 'center' },
+            5: { cellWidth: 90 }
+          },
+          theme: 'grid'
+        });
+      }
+
+      // 4. HISTORY TAB EXPORT
+      else if (activeTabPanel === 'history') {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text('I. TIMELINE KRONOLOGIS REVISI VERSI DED', 10, curY);
+        curY += 4;
+
+        const historyRows = availableVersions.map((v, ix) => [
+          `v${ix + 1}`,
+          v.version,
+          v.version === (activeDrawing.version || 'v1.0') ? 'AKTIF (TERBARU)' : 'ARSIP RIWAYAT',
+          v.uploadedBy,
+          v.uploadedDate,
+          v.changeNotes || 'Inisiasi rancangan gambar awal'
+        ]);
+
+        autoTable(doc, {
+          head: [['No', 'Kode Versi', 'Status Berkas', 'Petugas Pengunggah', 'Tanggal Rilis', 'Deskripsi Perubahan & Perbaikan']],
+          body: historyRows,
+          startY: curY,
+          margin: { left: 10, right: 10 },
+          styles: { fontSize: 7.5, cellPadding: 3 },
+          headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: 'bold' },
+          columnStyles: {
+            0: { cellWidth: 10, halign: 'center' },
+            1: { cellWidth: 20, fontStyle: 'bold', halign: 'center' },
+            2: { cellWidth: 35, fontStyle: 'bold' },
+            3: { cellWidth: 35 },
+            4: { cellWidth: 25, halign: 'center' },
+            5: { cellWidth: 65 }
+          },
+          theme: 'grid'
+        });
+      }
+
+      // ADD SIGNATURE & AUDIT SIGN-OFF BOX
+      // @ts-ignore
+      let finalY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 12 : curY + 15;
+      
+      if (finalY > 215) {
+        doc.addPage();
+        drawWatermark(doc);
+        finalY = 30;
+      }
+
+      // Signature section headers
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+      doc.text('LEMBAR VERIFIKASI PEMERIKSAAN DOKUMEN INTERNAL:', 10, finalY);
+      
+      finalY += 5;
+      
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.rect(10, finalY, pageWidth - 20, 24, 'D');
+
+      // Col 1: Disiapkan Oleh
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.text('DISIAPKAN OLEH (OPERATOR):', 15, finalY + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${currentRole}`, 15, finalY + 11);
+      doc.text('SPPI Digital Ledger Certified', 15, finalY + 15);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`[ ${currentUser?.name?.toUpperCase() || currentRole.toUpperCase()} ]`, 15, finalY + 20);
+
+      // Col 2: Diperiksa Oleh
+      doc.text('DIPERIKSA OLEH (PENGAWAS):', 78, finalY + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Konsultan Pengawas / PM', 78, finalY + 11);
+      doc.text('Status: APPROVED', 78, finalY + 15);
+      doc.setFont('helvetica', 'bold');
+      doc.text('[ TIM KONSULTAN TEKNIS ]', 78, finalY + 20);
+
+      // Col 3: Disetujui Oleh
+      doc.text('DISETUJUI OLEH (PEMILIK):', 142, finalY + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Owner / Owner Representative', 142, finalY + 11);
+      doc.text('Rumah Kost Jati Tujuh', 142, finalY + 15);
+      doc.setFont('helvetica', 'bold');
+      doc.text('[ RADIT WIDJAYA ]', 142, finalY + 20);
+
+      // Add Headers and Footers to all pages retrospectively
+      // @ts-ignore
+      const totalPagesCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= totalPagesCount; i++) {
+        doc.setPage(i);
+        if (i > 1) {
+          drawHeader(doc, i, totalPagesCount);
+        }
+        drawFooter(doc);
+      }
+
+      // Save PDF document with beautiful file naming convention
+      const formattedTitle = activePage.title.toLowerCase().replace(/\s+/g, '_');
+      const tabSlug = activeTabPanel.toLowerCase();
+      const filename = `SPPI_Laporan_${tabSlug}_${activePage.pageCode}_${formattedTitle}.pdf`;
+      doc.save(filename);
+
+      showToast(`Laporan internal "${filename}" berhasil diekspor!`, 'success');
+
+    } catch (error: any) {
+      console.error(error);
+      showToast('Gagal memuat ekspor view PDF: ' + error.message, 'error');
+    } finally {
+      setIsExportingViewPDF(false);
+    }
+  };
+
   // Clicking on image to place comment pin
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!isAuthorizedToAnnotate) {
+      showToast('Akses Terbatas: Hanya Admin & Pengawas yang dapat meletakkan pinpoint.', 'error');
+      return;
+    }
     if (!isPlacingPin || !drawingImageRef.current || !activeDrawing || !activePage) return;
     
     const rect = drawingImageRef.current.getBoundingClientRect();
@@ -1490,77 +2102,84 @@ export const DrawingViewer: React.FC = () => {
               <div className="h-4 w-[1px] bg-slate-800 hidden sm:block"></div>
               
               {/* Tool Mode Toggles */}
-              <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 animate-fade-in">
-                <button
-                  type="button"
-                  onClick={() => setAnnotationMode('none')}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
-                    annotationMode === 'none'
-                      ? 'bg-slate-800 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Mode navigasi standar"
-                >
-                  <span>Monev Geser (Pan)</span>
-                </button>
+              {!isAuthorizedToAnnotate ? (
+                <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950 p-1 px-3 rounded-lg border border-slate-800 text-[11px] font-medium leading-none">
+                  <Lock className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                  <span>Mode Baca-Saja. Coretan markup / memo terbatas untuk Admin & Pengawas.</span>
+                </div>
+              ) : (
+                <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 animate-fade-in">
+                  <button
+                    type="button"
+                    onClick={() => setAnnotationMode('none')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
+                      annotationMode === 'none'
+                        ? 'bg-slate-800 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Mode navigasi standar"
+                  >
+                    <span>Monev Geser (Pan)</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnnotationMode('pen');
-                    setIsPlacingPin(false);
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
-                    annotationMode === 'pen'
-                      ? 'bg-rose-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Gunakan pena coretan merah"
-                >
-                  <PenTool className="w-3 h-3" />
-                  <span>Coret Pena</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnnotationMode('pen');
+                      setIsPlacingPin(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
+                      annotationMode === 'pen'
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Gunakan pena coretan merah"
+                  >
+                    <PenTool className="w-3 h-3" />
+                    <span>Coret Pena</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnnotationMode('highlighter');
-                    setIsPlacingPin(false);
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
-                    annotationMode === 'highlighter'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Gunakan highlighter transparan"
-                >
-                  <Highlighter className="w-3 h-3" />
-                  <span>Stabilo Area</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnnotationMode('highlighter');
+                      setIsPlacingPin(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
+                      annotationMode === 'highlighter'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Gunakan highlighter transparan"
+                  >
+                    <Highlighter className="w-3 h-3" />
+                    <span>Stabilo Area</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAnnotationMode('sticky');
-                    setIsPlacingPin(false);
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
-                    annotationMode === 'sticky'
-                      ? 'bg-teal-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Klik di atas gambar untuk menempelkan memo"
-                >
-                  <FileText className="w-3 h-3" />
-                  <span>Memo Tempel</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnnotationMode('sticky');
+                      setIsPlacingPin(false);
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition flex items-center gap-1 ${
+                      annotationMode === 'sticky'
+                        ? 'bg-teal-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                    title="Klik di atas gambar untuk menempelkan memo"
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>Memo Tempel</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Custom Tool Controls depending on mode */}
             <div className="flex items-center gap-3">
               {/* PEN/HIGHLIGHTER STYLING TOOLS */}
-              {(annotationMode === 'pen' || annotationMode === 'highlighter') && (
+              {isAuthorizedToAnnotate && (annotationMode === 'pen' || annotationMode === 'highlighter') && (
                 <div className="flex items-center gap-2 animate-fade-in">
                   <span className="text-[10px] text-slate-400">Warna:</span>
                   <div className="flex items-center gap-1">
@@ -1594,7 +2213,7 @@ export const DrawingViewer: React.FC = () => {
               )}
 
               {/* STICKY STYLINGS */}
-              {annotationMode === 'sticky' && (
+              {isAuthorizedToAnnotate && annotationMode === 'sticky' && (
                 <div className="flex items-center gap-2 animate-fade-in">
                   <span className="text-[10px] text-slate-400">Warna Memo:</span>
                   <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800">
@@ -1634,32 +2253,135 @@ export const DrawingViewer: React.FC = () => {
                   {annotationsVisible ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
                 </button>
                 
-                <button
-                  type="button"
-                  onClick={handleUndoLastLine}
-                  disabled={pageAnnotations.lines.length === 0}
-                  className="p-1.5 text-slate-400 hover:text-white disabled:opacity-35 disabled:pointer-events-none rounded hover:bg-slate-800 transition"
-                  title="Undo coretan terakhir"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </button>
+                {isAuthorizedToAnnotate && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleUndoLastLine}
+                      disabled={pageAnnotations.lines.length === 0}
+                      className="p-1.5 text-slate-400 hover:text-white disabled:opacity-35 disabled:pointer-events-none rounded hover:bg-slate-800 transition"
+                      title="Undo coretan terakhir"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleClearAllPageAnnotations}
-                  disabled={pageAnnotations.lines.length === 0 && pageAnnotations.stickyNotes.length === 0}
-                  className="p-1.5 text-slate-400 hover:text-red-400 disabled:opacity-35 disabled:pointer-events-none rounded hover:bg-slate-800 transition"
-                  title="Hapus seluruh coretan & memo halaman ini"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllPageAnnotations}
+                      disabled={pageAnnotations.lines.length === 0 && pageAnnotations.stickyNotes.length === 0}
+                      className="p-1.5 text-slate-400 hover:text-red-400 disabled:opacity-35 disabled:pointer-events-none rounded hover:bg-slate-800 transition"
+                      title="Hapus seluruh coretan & memo halaman ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
           {/* Canvas Wrapper */}
-          <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-slate-950 relative min-h-0 select-none">
+          <div 
+            onMouseDown={handleWrapperMouseDown}
+            onMouseMove={handleWrapperMouseMove}
+            onMouseUp={handleWrapperMouseUp}
+            onMouseLeave={handleWrapperMouseUp}
+            onTouchStart={handleWrapperTouchStart}
+            onTouchMove={handleWrapperTouchMove}
+            onTouchEnd={handleWrapperTouchEnd}
+            onWheel={handleWheelZoom}
+            className={`flex-1 overflow-hidden flex items-center justify-center p-4 bg-slate-950 relative min-h-0 select-none transition-colors duration-150 ${
+              annotationMode === 'none' && !isPlacingPin
+                ? isPanning ? 'cursor-grabbing bg-slate-900/40' : 'cursor-grab hover:bg-slate-950/90'
+                : ''
+            }`}
+          >
             
+            {/* FLOATING BLUEPRINT PAN-ZOOM CONTROLS (D-PAD) */}
+            <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2 bg-slate-900/95 border border-slate-800 p-2.5 rounded-xl shadow-xl backdrop-blur-md">
+              <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-1.5 mb-1.5 px-0.5">
+                <span className="text-[9px] font-bold text-indigo-400 tracking-wider">NAVIGASI PAN & ZOOM</span>
+                <button
+                  onClick={handleZoomReset}
+                  className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-1.5 py-0.5 rounded border border-slate-750 transition flex items-center gap-0.5 cursor-pointer font-sans font-semibold"
+                  title="Reset Pan & Zoom"
+                >
+                  <Home className="w-2.5 h-2.5" />
+                  Reset
+                </button>
+              </div>
+
+              {/* D-Pad controls & Zoom buttons layout */}
+              <div className="flex items-center gap-3">
+                {/* D-PAD directions */}
+                <div className="grid grid-cols-3 gap-0.5 bg-slate-950 p-1 rounded-lg border border-slate-850 w-[72px] h-[72px] relative">
+                  <div />
+                  <button
+                    onClick={() => handlePan('up')}
+                    className="flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 active:bg-indigo-900 text-slate-300 hover:text-white transition cursor-pointer"
+                    title="Geser Atas"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <div />
+
+                  <button
+                    onClick={() => handlePan('left')}
+                    className="flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 active:bg-indigo-900 text-slate-300 hover:text-white transition cursor-pointer"
+                    title="Geser Kiri"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="flex items-center justify-center text-slate-600">
+                    <Move className="w-3 h-3 text-slate-500 animate-pulse" />
+                  </div>
+                  <button
+                    onClick={() => handlePan('right')}
+                    className="flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 active:bg-indigo-900 text-slate-300 hover:text-white transition cursor-pointer"
+                    title="Geser Kanan"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <div />
+                  <button
+                    onClick={() => handlePan('down')}
+                    className="flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 active:bg-indigo-900 text-slate-300 hover:text-white transition cursor-pointer"
+                    title="Geser Bawah"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  <div />
+                </div>
+
+                {/* ZOOM CONTROLS */}
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={handleZoomIn}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-indigo-400 active:scale-95 transition border border-slate-750 cursor-pointer"
+                    title="Perbesar (+)"
+                  >
+                    <ZoomIn className="w-4 h-4" />
+                  </button>
+                  <div className="text-[9px] font-mono font-bold text-center text-slate-400 py-0.5">
+                    {Math.round(zoomLevel * 100)}%
+                  </div>
+                  <button
+                    onClick={handleZoomOut}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-indigo-400 active:scale-95 transition border border-slate-750 cursor-pointer"
+                    title="Perkecil (-)"
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Instructions tip */}
+              <div className="text-[8px] text-slate-500 text-center border-t border-slate-850 pt-1.5 mt-0.5 select-none leading-normal max-w-[125px] mx-auto font-sans">
+                Tahan seret mouse / putar wheel untuk geser gambar
+              </div>
+            </div>
+
             {/* INSTRUCTIONS OR PLACING MODE TOP HEADER BAR */}
             {isPlacingPin && (
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-yellow-500 text-slate-950 text-[11px] font-bold px-4 py-1.5 rounded-full shadow-md z-20 flex items-center gap-1 px-4 animate-bounce animate-duration-1000">
@@ -1667,7 +2389,7 @@ export const DrawingViewer: React.FC = () => {
                 <span>Mode Pinpoint: Klik sembarang posisi pada gambar cetak untuk meletakkan Pin</span>
                 <button 
                   onClick={() => { setIsPlacingPin(false); setPendingPin(null); }}
-                  className="ml-2 hover:bg-yellow-600 rounded p-0.5"
+                  className="ml-2 hover:bg-yellow-600 rounded p-0.5 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -1697,7 +2419,7 @@ export const DrawingViewer: React.FC = () => {
                 )}
                 <button 
                   onClick={() => setAnnotationMode('none')}
-                  className="ml-2 bg-indigo-700 hover:bg-indigo-800 rounded px-1 text-[9px] font-mono"
+                  className="ml-2 bg-indigo-700 hover:bg-indigo-800 rounded px-1 text-[9px] font-mono cursor-pointer"
                 >
                   Batal
                 </button>
@@ -1706,8 +2428,11 @@ export const DrawingViewer: React.FC = () => {
 
             {/* Drawing Sheet Render Frame */}
             <div 
-              className="relative transition-transform duration-100 ease-out inline-block origin-center"
-              style={{ transform: `scale(${zoomLevel})` }}
+              className="relative inline-block origin-center"
+              style={{ 
+                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoomLevel})`,
+                transition: isPanning ? 'none' : 'transform 150ms ease-out'
+              }}
             >
               <img
                 ref={drawingImageRef}
@@ -1784,15 +2509,17 @@ export const DrawingViewer: React.FC = () => {
                             {note.author} ({note.date})
                           </span>
                           <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleStickyColor(note.id);
-                              }}
-                              className="w-3.5 h-3.5 rounded-full border border-black/25 bg-gradient-to-r from-yellow-350 via-rose-350 to-sky-350 shadow-inner"
-                              title="Ganti warna memo"
-                            />
+                            {isAuthorizedToAnnotate && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleStickyColor(note.id);
+                                }}
+                                className="w-3.5 h-3.5 rounded-full border border-black/25 bg-gradient-to-r from-yellow-350 via-rose-350 to-sky-350 shadow-inner"
+                                title="Ganti warna memo"
+                              />
+                            )}
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1804,17 +2531,19 @@ export const DrawingViewer: React.FC = () => {
                             >
                               −
                             </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteSticky(note.id);
-                              }}
-                              className="text-red-600 hover:text-rose-700 p-0.5 hover:bg-black/5 rounded"
-                              title="Hapus Memo"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {isAuthorizedToAnnotate && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteSticky(note.id);
+                                }}
+                                className="text-red-600 hover:text-rose-700 p-0.5 hover:bg-black/5 rounded"
+                                title="Hapus Memo"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1824,8 +2553,9 @@ export const DrawingViewer: React.FC = () => {
                           onChange={(e) => {
                             handleUpdateStickyText(note.id, e.target.value);
                           }}
-                          className={`w-full text-[10px] font-medium p-1 rounded border border-black/10 resize-none h-14 focus:outline-none focus:ring-1 ${currentColors.input}`}
-                          placeholder="Tulis koreksi di sini..."
+                          disabled={!isAuthorizedToAnnotate}
+                          className={`w-full text-[10px] font-medium p-1 rounded border border-black/10 resize-none h-14 focus:outline-none focus:ring-1 ${currentColors.input} disabled:opacity-85 disabled:cursor-not-allowed`}
+                          placeholder={isAuthorizedToAnnotate ? "Tulis koreksi di sini..." : "Tidak ada catatan."}
                         />
                       </div>
                     ) : (
@@ -1905,10 +2635,21 @@ export const DrawingViewer: React.FC = () => {
         <div className="lg:col-span-3 bg-white rounded-xl border border-slate-100 shadow-sm flex flex-col h-[680px]">
           
           {/* Navigation Tab Menu inside panel */}
-          <div className="flex border-b border-slate-100 text-xs">
+          <div className="flex border-b border-slate-100 text-[10px] sm:text-xs">
+            <button
+              onClick={() => setActiveTabPanel('detail')}
+              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1 ${
+                activeTabPanel === 'detail'
+                  ? 'border-indigo-600 text-indigo-600 bg-indigo-50/10'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Detail & Spek
+            </button>
             <button
               onClick={() => setActiveTabPanel('ai')}
-              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1 ${
                 activeTabPanel === 'ai'
                   ? 'border-indigo-600 text-indigo-600 bg-indigo-50/10'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -1919,23 +2660,23 @@ export const DrawingViewer: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTabPanel('comments')}
-              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1.5 relative ${
+              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1 relative ${
                 activeTabPanel === 'comments'
                   ? 'border-indigo-600 text-indigo-600 bg-indigo-50/10'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              Komentar & Pin
+              Komentar
               {activePage?.comments && activePage.comments.length > 0 && (
-                <span className="absolute top-2 right-2 bg-rose-600 text-[9px] text-white font-extrabold w-4.5 h-4.5 rounded-full flex items-center justify-center border border-white">
+                <span className="absolute top-2 right-1 bg-rose-600 text-[8px] text-white font-extrabold px-1.5 py-0.5 rounded-full border border-white">
                   {activePage.comments.length}
                 </span>
               )}
             </button>
             <button
               onClick={() => setActiveTabPanel('history')}
-              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-3 text-center border-b-2 font-bold transition flex items-center justify-center gap-1 ${
                 activeTabPanel === 'history'
                   ? 'border-indigo-600 text-indigo-600 bg-indigo-50/10'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -1948,6 +2689,144 @@ export const DrawingViewer: React.FC = () => {
 
           {/* ACTIVE PANEL INNER WRAPPER */}
           <div className="flex-1 p-4 overflow-y-auto min-h-0">
+
+            {/* PANEL 0: DETAILED DRAWING INFORMATION & SPECIFICATIONS */}
+            {activeTabPanel === 'detail' && activePage && (
+              <div className="flex flex-col gap-4 font-sans text-xs">
+                {/* Header sheet identifier */}
+                <div className="bg-slate-900 text-white rounded-xl p-3.5 shadow-sm relative overflow-hidden">
+                  <div className="absolute right-[-10px] bottom-[-10px] text-slate-800/40 font-black text-6xl pointer-events-none font-mono">
+                    {activePage.pageCode}
+                  </div>
+                  <div className="relative z-10 flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 font-mono">
+                        Lembar Gambar Kerja Resmi
+                      </span>
+                      <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-500/35 px-2 py-0.5 rounded-full text-[9px] font-extrabold tracking-wide">
+                        SIAP DIKERJAKAN
+                      </span>
+                    </div>
+                    <h3 className="text-sm font-extrabold tracking-tight mt-1 text-slate-100">
+                      {activePage.title}
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-mono mt-1">
+                      Kategori: {activePage.category} &bull; Skala: {activePage.scale}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Primary Description Box */}
+                <div className="border border-slate-100 bg-slate-50/50 rounded-xl p-3.5">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-1">
+                    Deskripsi Teknis Utama
+                  </span>
+                  <p className="text-slate-600 leading-relaxed font-medium">
+                    {activePage.description || 'Gambar penjelasan teknik penunjang kelengkapan DED.'}
+                  </p>
+                </div>
+
+                {/* Key Technical Specifications Checklist */}
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block">
+                      Spesifikasi Konstruksi Lapangan
+                    </span>
+                    <span className="text-[9px] font-bold text-indigo-600 font-mono">
+                      {activePage.specifications?.length || 0} Parameter Terverifikasi
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {activePage.specifications && activePage.specifications.length > 0 ? (
+                      activePage.specifications.map((spec, sIdx) => (
+                        <div key={sIdx} className="bg-white border border-slate-100 rounded-lg p-2.5 shadow-2xs hover:border-indigo-100 transition flex items-start gap-2.5">
+                          <CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-slate-700 font-semibold leading-snug">
+                              {spec}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-4 bg-slate-50 rounded-lg border border-slate-100 text-slate-400">
+                        Belum ada spesifikasi khusus tercantum untuk halaman ini.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Document Metadata Details */}
+                <div className="border-t border-slate-100 pt-4 mt-1">
+                  <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-2.5">
+                    Metadata Dokumen & Audit Log
+                  </span>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-50/60 border border-slate-100 p-3 rounded-xl font-mono text-[10px] text-slate-500">
+                    <div>
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold">DOKUMEN INDUK:</span>
+                      <p className="font-semibold text-slate-700 truncate" title={activeDrawing?.fileName}>
+                        {activeDrawing?.fileName || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold">VERSI DED:</span>
+                      <p className="font-semibold text-indigo-700 font-sans">
+                        {selectedVersion} {selectedVersion === (activeDrawing?.version || 'v1.0') ? '★ (Terbaru)' : ''}
+                      </p>
+                    </div>
+                    <div className="mt-1.5">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold">PENGUNGGAH:</span>
+                      <p className="font-semibold text-slate-700 truncate" title={activeDrawing?.uploadedBy}>
+                        {activeDrawing?.uploadedBy?.split(' ')[0] || '-'}
+                      </p>
+                    </div>
+                    <div className="mt-1.5">
+                      <span className="block text-[9px] text-slate-400 font-sans font-bold">TANGGAL RILIS:</span>
+                      <p className="font-semibold text-slate-700">
+                        {activeDrawing?.uploadedDate || '-'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Print/Export Action Block */}
+                <div className="bg-slate-900 border border-slate-800 text-slate-100 rounded-xl p-3.5 flex flex-col gap-3 mt-1 shadow-md">
+                  <div className="space-y-1">
+                    <p className="font-bold text-xs text-slate-200">Unduh Laporan & Dokumentasi Lapangan</p>
+                    <p className="text-[10px] text-slate-400 leading-normal">Mengekspor seluruh rincian spesifikasi teknis, data arsitektural resmi, serta metadata lembar kerja ini ke dalam berkas PDF resmi berlabel SPPI.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleExportPDF}
+                      disabled={isExportingPDF}
+                      className="flex-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-indigo-300 border border-indigo-500/20 font-bold py-2 px-2.5 rounded-lg flex items-center justify-center gap-1 text-[10px] shadow-sm transition cursor-pointer"
+                      title="Ekspor Gambar Kerja & Anotasi (A4 Landscape)"
+                    >
+                      {isExportingPDF ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Compass className="w-3.5 h-3.5" />
+                      )}
+                      DED Gambar
+                    </button>
+                    <button
+                      onClick={handleExportCurrentViewPDF}
+                      disabled={isExportingViewPDF}
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold py-2 px-2.5 rounded-lg flex items-center justify-center gap-1 text-[10px] shadow-sm transition cursor-pointer"
+                      title="Ekspor Laporan Spesifikasi Teknis Cetak (A4 Portrait)"
+                    >
+                      {isExportingViewPDF ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <FileText className="w-3.5 h-3.5" />
+                      )}
+                      {isExportingViewPDF ? 'Membuat...' : 'Cetak Laporan'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* PANEL A: AI ANALYSIS PLATFORM */}
             {activeTabPanel === 'ai' && activePage && (
@@ -2044,6 +2923,26 @@ export const DrawingViewer: React.FC = () => {
                   </form>
                 </div>
 
+                {/* AI Print/Export Action Block */}
+                <div className="bg-indigo-950/80 border border-indigo-900 text-indigo-100 rounded-xl p-3 flex flex-col gap-2.5 shadow-sm mt-3 animate-fade-in">
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-[11px] text-indigo-200">Ekspor Dialog & Analisis AI</p>
+                    <p className="text-[10px] text-indigo-400 leading-relaxed">Cetak seluruh transkrip percakapan konsultasi teknik beserta kajian spasial AI ini ke PDF untuk keperluan pendokumentasian internal.</p>
+                  </div>
+                  <button
+                    onClick={handleExportCurrentViewPDF}
+                    disabled={isExportingViewPDF}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-extrabold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 text-[10px] shadow-sm transition cursor-pointer"
+                  >
+                    {isExportingViewPDF ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    {isExportingViewPDF ? 'Sedang Memproses...' : 'Ekspor Laporan Kajian AI (PDF)'}
+                  </button>
+                </div>
+
               </div>
             )}
 
@@ -2057,7 +2956,7 @@ export const DrawingViewer: React.FC = () => {
                     Komentar Temuan & Rencana Revisi
                   </h3>
                   
-                  {!isPlacingPin && (
+                  {isAuthorizedToAnnotate && !isPlacingPin && (
                     <button
                       onClick={() => {
                         setIsPlacingPin(true);
@@ -2185,6 +3084,28 @@ export const DrawingViewer: React.FC = () => {
                   )}
                 </div>
 
+                {/* Comments Print/Export Action Block */}
+                {activePage.comments.length > 0 && (
+                  <div className="bg-emerald-950/80 border border-emerald-900 text-emerald-100 rounded-xl p-3 flex flex-col gap-2.5 shadow-sm mt-4 animate-fade-in">
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-[11px] text-emerald-200 font-sans">Ekspor Punch List & Komentar</p>
+                      <p className="text-[10px] text-emerald-400 leading-relaxed">Ekspor daftar lengkap pinpoint koordinat, memo koreksi, dan diskusi evaluasi lapangan ke dalam dokumen PDF formal berlabel Kepatuhan SPPI.</p>
+                    </div>
+                    <button
+                      onClick={handleExportCurrentViewPDF}
+                      disabled={isExportingViewPDF}
+                      className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 text-[10px] shadow-sm transition cursor-pointer"
+                    >
+                      {isExportingViewPDF ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      )}
+                      {isExportingViewPDF ? 'Sedang Memproses...' : 'Ekspor Daftar Punch List (PDF)'}
+                    </button>
+                  </div>
+                )}
+
               </div>
             )}
 
@@ -2283,6 +3204,27 @@ export const DrawingViewer: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                {/* History Print/Export Action Block */}
+                <div className="bg-slate-900 border border-slate-800 text-slate-100 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-md mt-4 animate-fade-in">
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-[11px] text-slate-200">Cetak Audit Trail Perubahan</p>
+                    <p className="text-[10px] text-slate-400 leading-normal">Unduh riwayat komprehensif timeline revisi versi lembar gambar kerja (VCS) ini lengkap dengan data pelaku pengunggah & verifikator.</p>
+                  </div>
+                  <button
+                    onClick={handleExportCurrentViewPDF}
+                    disabled={isExportingViewPDF}
+                    className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-55 text-indigo-300 font-extrabold py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 text-[10px] shadow-sm transition cursor-pointer"
+                  >
+                    {isExportingViewPDF ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <History className="w-3.5 h-3.5" />
+                    )}
+                    {isExportingViewPDF ? 'Sedang Memproses...' : 'Ekspor Audit Log Versi (PDF)'}
+                  </button>
+                </div>
+
               </div>
             )}
 
