@@ -1,6 +1,6 @@
 {
   "name": "Foresyndo 2 - Hotel, Kost & Contractor Portal",
   "description": "Smart Hotel, Kost Eksklusif, and Mitra Kontraktor portal for PT. Foresyndo Global Indonesia in Jatitujuh Majalengka, West Java.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -180,6 +180,133 @@ export const ProjectManagement: React.FC = () => {
   // Gallery filter state
   const [activeGalleryFilter, setActiveGalleryFilter] = useState<'All' | 'Photo' | 'Drone Video' | 'Time Lapse'>('All');
 
+  // Camera integration state and refs for live site capturing
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [capturedPreview, setCapturedPreview] = useState<string | null>(null);
+
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  const startCamera = async (deviceId?: string) => {
+    try {
+      // Stop existing stream first
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints: MediaStreamConstraints = {
+        video: deviceId 
+          ? { deviceId: { exact: deviceId } } 
+          : { facingMode: { ideal: 'environment' } }, // Prefer back camera for site photos
+        audio: false
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      setCameraStream(stream);
+      setIsCameraOpen(true);
+
+      // Bind to video ref using a short delay to allow elements to mount
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 100);
+
+      // Enumerate other video devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      setCameraDevices(videoDevices);
+      if (!deviceId && videoDevices.length > 0) {
+        const activeTrack = stream.getVideoTracks()[0];
+        if (activeTrack) {
+          const settings = activeTrack.getSettings();
+          if (settings.deviceId) {
+            setSelectedDeviceId(settings.deviceId);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Gagal mengakses kamera:', err);
+      if (showToast) {
+        showToast('Gagal mengakses kamera. Mohon berikan izin kamera pada peramban Anda.', 'error');
+      } else {
+        alert('Gagal mengakses kamera. Mohon berikan izin kamera pada peramban Anda.');
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext('2d');
+      if (context) {
+        // Handle mirroring if using front camera
+        const activeTrack = cameraStream?.getVideoTracks()[0];
+        const label = activeTrack?.label?.toLowerCase() || '';
+        const isFrontCamera = label.includes('front') || label.includes('user') || false;
+
+        if (isFrontCamera) {
+          context.translate(width, 0);
+          context.scale(-1, 1);
+        }
+
+        context.drawImage(video, 0, 0, width, height);
+
+        // Reset transform if it was mirrored so watermark writes normally
+        if (isFrontCamera) {
+          context.setTransform(1, 0, 0, 1, 0, 0);
+        }
+        
+        // Dynamic construction watermark
+        context.fillStyle = 'rgba(15, 23, 42, 0.75)';
+        context.fillRect(10, height - 70, width - 20, 60);
+
+        context.fillStyle = '#ffffff';
+        context.font = 'bold 12px monospace';
+        context.fillText('PROYEK: FORESYNDO 2 - HOTEL, KOST & PORTAL MITRA', 20, height - 50);
+        context.fillText('LOKASI: JATITUJUH, MAJALENGKA, JAWA BARAT', 20, height - 34);
+        
+        context.fillStyle = '#f97316'; // orange-500
+        context.fillText(`WAKTU : [${new Date().toLocaleString('id-ID')}] WIB (GPS SYNCED)`, 20, height - 18);
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        setCapturedPreview(dataUrl);
+        setDocUrl(dataUrl);
+        
+        if (showToast) {
+          showToast('Foto harian pengawas berhasil diambil dengan watermark proyek!', 'success');
+        }
+        stopCamera();
+      }
+    }
+  };
+
+  React.useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
   const handleProgressUploadSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -263,6 +390,7 @@ export const ProjectManagement: React.FC = () => {
     setDocTitle('');
     setDocDesc('');
     setDocUrl('');
+    setCapturedPreview(null);
   };
 
   const filteredDocs = projectDocs.filter(d => {
@@ -663,20 +791,145 @@ export const ProjectManagement: React.FC = () => {
                 </div>
 
                 {docType === 'Photo' && (
-                  <div>
-                    <label className="block text-xs text-slate-500 uppercase tracking-widest font-mono font-bold mb-1.5">Kategori Pekerjaan</label>
-                    <select 
-                      value={docCategory}
-                      onChange={(e) => setDocCategory(e.target.value)}
-                      className="w-full bg-slate-50 text-slate-800 p-2.5 rounded-xl border border-slate-200 text-xs focus:border-blue-550 focus:ring-1 focus:ring-blue-550 outline-none"
-                    >
-                      <option value="Persiapan">Persiapan</option>
-                      <option value="Struktur">Struktur Utama</option>
-                      <option value="Arsitektur">Arsitektural</option>
-                      <option value="MEP">Kelistrikan &amp; MEP</option>
-                      <option value="Interior">Interior</option>
-                      <option value="Landscape">Lansekap</option>
-                    </select>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs text-slate-500 uppercase tracking-widest font-mono font-bold mb-1.5">Kategori Pekerjaan</label>
+                      <select 
+                        value={docCategory}
+                        onChange={(e) => setDocCategory(e.target.value)}
+                        className="w-full bg-slate-50 text-slate-800 p-2.5 rounded-xl border border-slate-200 text-xs focus:border-blue-550 focus:ring-1 focus:ring-blue-550 outline-none"
+                      >
+                        <option value="Persiapan">Persiapan</option>
+                        <option value="Struktur">Struktur Utama</option>
+                        <option value="Arsitektur">Arsitektural</option>
+                        <option value="MEP">Kelistrikan &amp; MEP</option>
+                        <option value="Interior">Interior</option>
+                        <option value="Landscape">Lansekap</option>
+                      </select>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="block text-xs text-slate-500 uppercase tracking-widest font-mono font-bold">Kamera Pengawas Lapangan</span>
+                        {isCameraOpen && (
+                          <span className="flex items-center gap-1 bg-red-600/90 text-white px-2 py-0.5 rounded text-[8px] font-mono font-bold uppercase tracking-widest border border-red-500 animate-pulse">
+                            Kamera Aktif
+                          </span>
+                        )}
+                      </div>
+                      
+                      {capturedPreview ? (
+                        <div className="space-y-2">
+                          <div className="relative h-44 rounded-lg overflow-hidden border border-slate-300 shadow-sm bg-slate-900 flex items-center justify-center">
+                            <img src={capturedPreview} alt="Captured preview" className="w-full h-full object-cover" />
+                            <div className="absolute bottom-2 right-2 px-2 py-1 bg-slate-900/80 rounded text-[9px] text-white font-mono uppercase tracking-wider font-semibold border border-slate-700/50">
+                              Pratinjau Foto
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCapturedPreview(null);
+                                setDocUrl('');
+                              }}
+                              className="flex-1 py-2 border border-rose-200 hover:bg-rose-50 text-rose-600 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer"
+                            >
+                              Hapus Foto
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCapturedPreview(null);
+                                startCamera();
+                              }}
+                              className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-[10px] font-mono font-bold transition cursor-pointer"
+                            >
+                              Ambil Ulang
+                            </button>
+                          </div>
+                        </div>
+                      ) : isCameraOpen ? (
+                        <div className="space-y-3">
+                          {/* Video streaming container */}
+                          <div className="relative h-48 rounded-lg overflow-hidden bg-black border border-slate-300 shadow-inner flex items-center justify-center">
+                            <video 
+                              ref={videoRef} 
+                              autoPlay 
+                              playsInline 
+                              className="w-full h-full object-cover"
+                            />
+                            
+                            {/* Guideline Grid for perfect construction alignments */}
+                            <div className="absolute inset-0 border border-white/10 pointer-events-none flex flex-col justify-between p-2">
+                              <div className="w-full flex justify-between">
+                                <div className="w-3 h-3 border-t-2 border-l-2 border-white/60"></div>
+                                <div className="w-3 h-3 border-t-2 border-r-2 border-white/60"></div>
+                              </div>
+                              <div className="self-center w-full border-t border-dashed border-white/25"></div>
+                              <div className="self-center h-full border-l border-dashed border-white/25"></div>
+                              <div className="w-full flex justify-between">
+                                <div className="w-3 h-3 border-b-2 border-l-2 border-white/60"></div>
+                                <div className="w-3 h-3 border-b-2 border-r-2 border-white/60"></div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Camera select and action controls */}
+                          <div className="space-y-2">
+                            {cameraDevices.length > 1 && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-400 font-mono">Pilih Lensa:</span>
+                                <select
+                                  value={selectedDeviceId}
+                                  onChange={(e) => {
+                                    setSelectedDeviceId(e.target.value);
+                                    startCamera(e.target.value);
+                                  }}
+                                  className="flex-1 bg-white border border-slate-200 text-[10px] font-mono p-1 rounded focus:outline-none text-slate-700"
+                                >
+                                  {cameraDevices.map((d, index) => (
+                                    <option key={d.deviceId} value={d.deviceId}>
+                                      {d.label || `Kamera ${index + 1}`}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={stopCamera}
+                                className="flex-1 py-2 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg text-[10px] font-mono font-bold transition cursor-pointer"
+                              >
+                                Batal
+                              </button>
+                              <button
+                                type="button"
+                                onClick={capturePhoto}
+                                className="flex-2 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center gap-1.5 shadow shadow-green-600/20 cursor-pointer"
+                              >
+                                <Camera className="w-3.5 h-3.5" /> Ambil Foto Lapangan
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startCamera()}
+                          className="w-full py-3.5 border border-dashed border-indigo-300 bg-indigo-50/30 hover:bg-indigo-50/60 hover:border-indigo-400 text-indigo-700 rounded-xl transition flex flex-col items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Camera className="w-5 h-5 text-indigo-600" />
+                          <span className="text-xs font-mono font-bold">Ambil Foto dengan Kamera</span>
+                          <span className="text-[9px] text-indigo-400 font-sans">Tambahkan foto langsung dari lapangan dengan tanda air proyek</span>
+                        </button>
+                      )}
+
+                      {/* Hidden canvas for capturing */}
+                      <canvas ref={canvasRef} className="hidden" />
+                    </div>
                   </div>
                 )}
 

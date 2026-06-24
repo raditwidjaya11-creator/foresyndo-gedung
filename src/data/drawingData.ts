@@ -2,13 +2,14 @@ import { DrawingFile } from '../types';
 import frontImage from '../assets/images/majalengka_kost_front_1781714630858.jpg';
 import poolImage from '../assets/images/majalengka_kost_pool_1781714653066.jpg';
 import blueprintImage from '../assets/images/majalengka_kost_blueprint_1781714675636.jpg';
+import eveningImage from '../assets/images/majalengka_kost_evening_1782317087739.jpg';
 
 export const INITIAL_DRAWINGS: DrawingFile[] = [
   {
     id: 'draw_ded_maj',
     fileName: 'DED_Rumah_Kost_Jatitujuh_Majalengka_Official.pdf',
     fileUrl: '#',
-    totalPage: 17,
+    totalPage: 18,
     uploadedDate: '2026-06-22',
     uploadedBy: 'PT Foresyndo Global Indonesia (Owner)',
     changeHistory: [
@@ -416,6 +417,37 @@ export const INITIAL_DRAWINGS: DrawingFile[] = [
           notes: 'Gunakan cairan pelindung batu paras jogja jenis anti-jamur (water-repellent coating) agar batu putih tidak menguning berlumut.'
         },
         comments: []
+      },
+      {
+        pageNumber: 18,
+        pageCode: 'V-08',
+        title: 'Render 3D Perspektif Fasad Malam / Senja Tepi Air (Waterfront Sunset Render)',
+        category: 'Visualisasi 3D',
+        image: eveningImage,
+        scale: 'NTS (Non-Technical Scale)',
+        description: 'Visualisasi 3D eksterior gedung utama pada sore/malam hari dari arah tepi air. Menampilkan pencahayaan fasad (facade lighting) yang dramatis, kehangatan cahaya jendela kamar, lobi utama klasik dengan pilar ganda, serta siluet cakrawala kota metropolitan di kejauhan.',
+        specifications: [
+          'Sistem Facade Lighting: LED Spot / Linear Warm White IP66 dengan pengontrol waktu otomatis (timer)',
+          'Pencahayaan Interior: Downlight LED Warm White 9W (3000K) di setiap balkon dan koridor',
+          'Kaca Jendela Fasad: Double-glazed tinted glass 12mm penahan panas dan peredam bising eksternal',
+          'Finishing Kolom Klasik: Plester pasir kamprot dilapisi cat silikon tahan cuaca lembap tepi air'
+        ],
+        aiAnalysis: {
+          type: 'Rendisi 3D / Perspektif Malam Hari (Night Render)',
+          summary: 'Gambar menunjukkan visualisasi eksterior 6 lantai dengan gaya arsitektur klasik modern pada suasana senja hari. Desain bangunan dioptimalkan untuk pencahayaan malam yang mewah dan estetika waterfront premium.',
+          dims: 'Ketinggian bangunan: 22.5 Meter. Lebar fasad depan: 12.7 Meter.',
+          notes: 'Pastikan instalasi kabel untuk lampu facade terpasang rapi di dalam pipa PVC tersembunyi pada kolom struktur untuk menjaga kerapian estetika pilar.'
+        },
+        comments: [
+          {
+            id: 'com_p18_1',
+            user: 'Direksi Owner PT. FGI',
+            role: 'Owner',
+            text: 'Efek pencahayaan malam ini luar biasa! Pastikan jalur kabel tersembunyi di balik profil ornamen klasik.',
+            date: '2026-06-24',
+            pin: { x: 50, y: 75 }
+          }
+        ]
       }
     ]
   }
