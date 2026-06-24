@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion } from 'motion/react';
+import { InteractiveSiteMap } from './InteractiveSiteMap';
 import { 
   Building, 
   MapPin, 
@@ -414,6 +415,20 @@ export const LandingPage: React.FC = () => {
             </ul>
           </div>
         </div>
+      </div>
+
+      {/* 2D SITE MAP INTERACTIVE VISUALIZATION */}
+      <div className="py-16 px-6 max-w-6xl mx-auto border-t border-slate-100">
+        <div className="text-center max-w-2xl mx-auto mb-12 space-y-4">
+          <span className="p-1 px-3 bg-[#1E3A8A]/10 text-[#1E3A8A] font-mono font-bold text-[10px] rounded-full tracking-widest uppercase">Peta Visual Interaktif</span>
+          <h2 className="text-3xl font-black tracking-tight text-[#1E3A8A] font-display">Peta Progres Fisik Sektoral (2D CAD)</h2>
+          <div className="w-16 h-1 bg-[#EA580C] mx-auto"></div>
+          <p className="text-slate-600 font-normal text-sm">
+            Visualisasi posisi tapak kavling dan status kemajuan fisik sektoral real-time proyek hotel &amp; premium kost Kertajati. Klik pada sektor untuk informasi mendalam.
+          </p>
+        </div>
+        
+        <InteractiveSiteMap />
       </div>
 
       {/* INVESTMENT & ROI SIMULATOR SECTION */}

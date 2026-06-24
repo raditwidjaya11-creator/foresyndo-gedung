@@ -146,7 +146,56 @@ export const OwnerDashboard: React.FC = () => {
     }
   };
 
-  const handleDrawingUploadSubmit = (e: React.FormEvent) => {
+  // Convert and compress selected image file to base64
+  const getCompressedDrawingImageDataURL = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith('image/')) {
+        resolve('');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 900;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.75));
+          } else {
+            resolve(e.target?.result as string || '');
+          }
+        };
+        img.onerror = () => {
+          resolve(e.target?.result as string || '');
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDrawingUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDrawingFileName.trim()) {
       if (showToast) showToast('Mohon lampirkan file atau isi nama berkas PDF', 'error');
@@ -155,6 +204,13 @@ export const OwnerDashboard: React.FC = () => {
 
     setIsDrawingUploading(true);
     setDrawingUploadProgress(0);
+
+    let uploadedImageSrc = '';
+    if (selectedDrawingFile) {
+      if (selectedDrawingFile.type.startsWith('image/')) {
+        uploadedImageSrc = await getCompressedDrawingImageDataURL(selectedDrawingFile);
+      }
+    }
 
     const interval = setInterval(() => {
       setDrawingUploadProgress(prev => {
@@ -176,6 +232,16 @@ export const OwnerDashboard: React.FC = () => {
 
       // Build simulated pages
       const simulatedPages = [];
+      
+      const defaultCategoryFallback = 
+        newDrawingFileCategory === 'Arsitektur' 
+          ? 'https://images.unsplash.com/photo-1503387762-592dedb802d7?q=80&w=1200' 
+          : newDrawingFileCategory === 'Struktur & Sipil'
+          ? 'https://images.unsplash.com/photo-1581094288338-2314dddb7ecc?q=80&w=1200'
+          : 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=1200';
+
+      const finalPageImage = uploadedImageSrc || defaultCategoryFallback;
+
       for (let i = 1; i <= newDrawingFilePagesCount; i++) {
         simulatedPages.push({
           pageCode: `${newDrawingFileCategory === 'Arsitektur' ? 'A' : newDrawingFileCategory === 'Struktur & Sipil' ? 'S' : 'V'}-0${i}`,
@@ -183,6 +249,7 @@ export const OwnerDashboard: React.FC = () => {
           description: `Gambar DED hasil konversi digital PDF terverifikasi untuk kategori: ${newDrawingFileCategory}.`,
           category: newDrawingFileCategory,
           scale: '1:100',
+          image: finalPageImage,
           specifications: ['Pematuhan teknis standar SNI', 'Menjalani approval bersama owner'],
         });
       }
@@ -196,7 +263,11 @@ export const OwnerDashboard: React.FC = () => {
       setShowUploadDrawingModal(false);
 
       if (showToast) {
-        showToast(`Sukses menambahkan berkas ${finalName} ke katalog Gambar Kerja!`, 'success');
+        if (uploadedImageSrc) {
+          showToast(`Gambar berhasil diproses dan disematkan langsung ke berkas ${finalName}!`, 'success');
+        } else {
+          showToast(`Sukses menambahkan berkas ${finalName} ke katalog Gambar Kerja!`, 'success');
+        }
       }
     }, 2000);
   };
@@ -1616,80 +1687,88 @@ export const OwnerDashboard: React.FC = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {drawingFiles.map((file) => {
-              // Find if any page of this file is currently highlighted
-              const isActiveFile = pdfSheets.some(s => s.fileId === file.id && s.id === selectedPdfPageId);
+          {drawingFiles.length === 0 ? (
+            <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 p-6 flex flex-col items-center justify-center">
+              <Compass className="w-8 h-8 text-indigo-500 mb-3 animate-bounce" />
+              <p className="text-sm font-bold text-slate-700">Katalog Gambar Kerja Kosong</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">Belum ada dokumen gambar teknis (DED) yang diunggah ke dalam sistem.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {drawingFiles.map((file) => {
+                // Find if any page of this file is currently highlighted
+                const isActiveFile = pdfSheets.some(s => s.fileId === file.id && s.id === selectedPdfPageId);
 
-              return (
-                <div 
-                  key={file.id}
-                  className={`p-4 rounded-xl border transition flex flex-col justify-between ${
-                    isActiveFile 
-                      ? 'bg-indigo-50/50 border-indigo-400 shadow-md ring-2 ring-indigo-500/20' 
-                      : 'bg-white border-slate-200 hover:border-slate-350 shadow-xs'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-1 mb-2">
-                      <span className="text-[10px] font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-extrabold uppercase">
-                        PDF DRAWING
-                      </span>
-                      <span className="text-[9px] text-slate-400 font-mono font-bold">
-                        {file.totalPage} LMS
-                      </span>
+                return (
+                  <div 
+                    key={file.id}
+                    className={`p-4 rounded-xl border transition flex flex-col justify-between ${
+                      isActiveFile 
+                        ? 'bg-indigo-50/50 border-indigo-400 shadow-md ring-2 ring-indigo-500/20' 
+                        : 'bg-white border-slate-200 hover:border-slate-350 shadow-xs'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-1 mb-2">
+                        <span className="text-[10px] font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-extrabold uppercase">
+                          PDF DRAWING
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono font-bold">
+                          {file.totalPage} LMS
+                        </span>
+                      </div>
+
+                      <h5 className="text-xs font-bold text-slate-800 line-clamp-1 leading-relaxed" title={file.fileName}>
+                        {file.fileName}
+                      </h5>
+
+                      <div className="space-y-1 mt-2 text-[10px] text-slate-450 font-mono">
+                        <div className="flex justify-between">
+                          <span>Tanggal:</span>
+                          <span className="text-slate-650 font-semibold">{file.uploadedDate}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Oleh:</span>
+                          <span className="text-slate-650 font-semibold">{file.uploadedBy.split(' ')[0]}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <h5 className="text-xs font-bold text-slate-800 line-clamp-1 leading-relaxed" title={file.fileName}>
-                      {file.fileName}
-                    </h5>
-
-                    <div className="space-y-1 mt-2 text-[10px] text-slate-450 font-mono">
-                      <div className="flex justify-between">
-                        <span>Tanggal:</span>
-                        <span className="text-slate-650 font-semibold">{file.uploadedDate}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Oleh:</span>
-                        <span className="text-slate-650 font-semibold">{file.uploadedBy.split(' ')[0]}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-1.5 border-t border-slate-100 pt-2.5 mt-2.5">
-                    <button
-                      onClick={() => {
-                        // Find first page of this file in pdfSheets flat list and activate it
-                        const firstPage = pdfSheets.find(s => s.fileId === file.id);
-                        if (firstPage) {
-                          setSelectedPdfPageId(firstPage.id);
-                          if (showToast) {
-                            showToast(`Memuat lembar kerja dari berkas: ${file.fileName}`, 'info');
+                    <div className="flex gap-1.5 border-t border-slate-100 pt-2.5 mt-2.5">
+                      <button
+                        onClick={() => {
+                          // Find first page of this file in pdfSheets flat list and activate it
+                          const firstPage = pdfSheets.find(s => s.fileId === file.id);
+                          if (firstPage) {
+                            setSelectedPdfPageId(firstPage.id);
+                            if (showToast) {
+                              showToast(`Memuat lembar kerja dari berkas: ${file.fileName}`, 'info');
+                            }
                           }
-                        }
-                      }}
-                      className="flex-1 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold font-mono text-[9px] rounded-lg text-center transition cursor-pointer"
-                    >
-                      Preview Halaman
-                    </button>
+                        }}
+                        className="flex-1 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold font-mono text-[9px] rounded-lg text-center transition cursor-pointer"
+                      >
+                        Preview Halaman
+                      </button>
 
-                    <button
-                      onClick={() => {
-                        setActiveTab('drawing_viewer');
-                        if (showToast) {
-                          showToast(`Membuka berkas ${file.fileName} dalam Mode Interaktif Fullscreen`, 'info');
-                        }
-                      }}
-                      className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 rounded-lg text-center transition cursor-pointer"
-                      title="Membuka di standalone Gambar Kerja"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab('drawing_viewer');
+                          if (showToast) {
+                            showToast(`Membuka berkas ${file.fileName} dalam Mode Interaktif Fullscreen`, 'info');
+                          }
+                        }}
+                        className="py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 rounded-lg text-center transition cursor-pointer"
+                        title="Membuka di standalone Gambar Kerja"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* FILTERS & SEARCH ROW */}

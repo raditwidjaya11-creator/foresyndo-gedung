@@ -842,7 +842,7 @@ export const RABExplorer: React.FC = () => {
       )}
 
       {/* HEADER SECTION METADATA */}
-      <div className="bg-[#1E3A8A] text-white rounded-3xl p-6 md:p-8 shadow-xl border-b-4 border-orange-500 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-[#1E3A8A] via-[#1E3A8A]/90 to-white text-white rounded-3xl p-6 md:p-8 shadow-xl border-b-4 border-orange-500 relative overflow-hidden">
         {/* Subtle decorative grid overlay */}
         <div className="absolute inset-0 opacity-10 bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
         

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { generateStandardEmailHTML } from '../utils/emailTemplates';
 import { 
   Mail, 
   MessageSquare, 
@@ -150,179 +151,106 @@ export const ModuleShareWidget: React.FC<ModuleShareWidgetProps> = ({ activeTabI
 
   // Generate Email HTML Content specifically with tailored module summaries
   const generateEmailHTML = () => {
-    let specificContent = '';
+    const sections: any[] = [];
 
     switch (activeTabId) {
       case 'rab_explorer':
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #1e3a8a; text-transform: uppercase;">1. DATA RINGKASAN E-RAB</p>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Grand Total Rencana Biaya:</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #1e3a8a; border-bottom: 1px solid #f1f5f9;">Rp ${projectStats.investmentValue.toLocaleString('id-ID')},00</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Sistem Otentikasi:</td>
-                <td style="padding: 8px 0; text-align: right; color: #10b981; font-weight: bold; border-bottom: 1px solid #f1f5f9;">SHA-256 Ledger Digital</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b;">Metode Penaksiran:</td>
-                <td style="padding: 8px 0; text-align: right; color: #64748b;">DED Koefisien SNI Terkini</td>
-              </tr>
-            </table>
-          </div>
-        `;
+        sections.push({
+          title: 'DATA RINGKASAN E-RAB',
+          themeColor: 'blue',
+          rows: [
+            { label: 'Grand Total Rencana Biaya:', value: `Rp ${projectStats.investmentValue.toLocaleString('id-ID')},00`, isBold: true },
+            { label: 'Sistem Otentikasi:', value: 'SHA-256 Ledger Digital', isBold: true },
+            { label: 'Metode Penaksiran:', value: 'DED Koefisien SNI Terkini' }
+          ]
+        });
         break;
 
       case 'progress':
-        const rows = progressItems.map(p => `
-          <tr style="border-bottom: 1px solid #f1f5f9;">
-            <td style="padding: 8px 0; color: #334155;">Pekerjaan ${p.category}</td>
-            <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #1e3a8a;">${p.progressPercent}%</td>
-            <td style="padding: 8px 0; text-align: right; color: #64748b; font-size: 11px;">[${p.status}]</td>
-          </tr>
-        `).join('');
-
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #f97316; text-transform: uppercase;">1. DETAIL KEMAJUAN FISIK PM LAPANGAN</p>
-            <p style="font-size: 13px; color: #475569; margin: 0 0 15px 0;">Kemajuan Fisik Gabungan Lapangan saat ini berada pada angka <strong>${projectStats.physicalProgress.toFixed(1)}% Completed</strong>.</p>
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-              ${rows}
-            </table>
-          </div>
-        `;
+        const rows = progressItems.map(p => ({
+          label: `Pekerjaan ${p.category}`,
+          value: `${p.progressPercent}% [${p.status}]`,
+          isBold: true
+        }));
+        sections.push({
+          title: 'DETAIL KEMAJUAN FISIK PM LAPANGAN',
+          themeColor: 'amber',
+          description: `Kemajuan Fisik Gabungan Lapangan saat ini berada pada angka <strong>${projectStats.physicalProgress.toFixed(1)}% Completed</strong>.`,
+          rows
+        });
         break;
 
       case 'owner':
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #0f766e; text-transform: uppercase;">1. SKOR KEUANGAN MONITOR OWNER</p>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Alokasi Anggaran Utama:</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #0f172a; border-bottom: 1px solid #f1f5f9;">Rp ${projectStats.investmentValue.toLocaleString('id-ID')}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Realisasi Belanja Lapangan:</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #ef4444; border-bottom: 1px solid #f1f5f9;">Rp ${projectStats.actualSpending.toLocaleString('id-ID')}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b;">Sisa Anggaran Tersedia:</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #2563eb;">Rp ${projectStats.remainingBudget.toLocaleString('id-ID')}</td>
-              </tr>
-            </table>
-          </div>
-        `;
+        sections.push({
+          title: 'SKOR KEUANGAN MONITOR OWNER',
+          themeColor: 'emerald',
+          rows: [
+            { label: 'Alokasi Anggaran Utama:', value: `Rp ${projectStats.investmentValue.toLocaleString('id-ID')}` },
+            { label: 'Realisasi Belanja Lapangan:', value: `Rp ${projectStats.actualSpending.toLocaleString('id-ID')}`, isBold: true },
+            { label: 'Sisa Anggaran Tersedia:', value: `Rp ${projectStats.remainingBudget.toLocaleString('id-ID')}`, isBold: true }
+          ]
+        });
         break;
 
       case 'investor':
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #8b5cf6; text-transform: uppercase;">1. METRIKS KELAYAKAN INVESTASI (FEASIBILITY STUDY)</p>
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Proyeksi Unit Kamar:</td>
-                <td style="padding: 8px 0; text-align: right; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${projectStats.hotelRoomsCount} Hotel Unit &amp; ${projectStats.kostRoomsCount} Kost Premium</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Proyeksi Pendapatan Bulanan:</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #16a34a; border-bottom: 1px solid #f1f5f9;">Rp ${projectStats.estimatedRevenueMonthly.toLocaleString('id-ID')}/bln</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b; border-bottom: 1px solid #f1f5f9;">Internal Rate of Return (IRR):</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #8b5cf6; border-bottom: 1px solid #f1f5f9;">~24.5%</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; color: #64748b;">Estimasi BEP / Payback Period:</td>
-                <td style="padding: 8px 0; text-align: right; font-weight: bold; color: #7c3aed;">~4.1 Tahun</td>
-              </tr>
-            </table>
-          </div>
-        `;
+        sections.push({
+          title: 'METRIKS KELAYAKAN INVESTASI (FEASIBILITY STUDY)',
+          themeColor: 'purple',
+          rows: [
+            { label: 'Proyeksi Unit Kamar:', value: `${projectStats.hotelRoomsCount} Hotel Unit & ${projectStats.kostRoomsCount} Kost Premium` },
+            { label: 'Proyeksi Pendapatan Bulanan:', value: `Rp ${projectStats.estimatedRevenueMonthly.toLocaleString('id-ID')}/bln`, isBold: true },
+            { label: 'Internal Rate of Return (IRR):', value: '~24.5%', isBold: true },
+            { label: 'Estimasi BEP / Payback Period:', value: '~4.1 Tahun', isBold: true }
+          ]
+        });
         break;
 
       case 'drawing_viewer':
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #ec4899; text-transform: uppercase;">1. LAPORAN REVIEW DRAWING GAMBAR KERJA (DED)</p>
-            <p style="font-size: 13px; color: #334155; margin: 0 0 10px 0;">Terarsip sebanyak <strong>${drawingFiles.length} berkas DED resmi</strong> untuk pembangunan struktur baja dan pondasi.</p>
-            <p style="font-size: 12px; color: #64748b; margin: 0;">Sistem dilengkapi koordinat Pinpoint Penanda Lapangan, memfasilitasi koordinasi langsung antara Konsultan Pengawas dan Kontraktor Pelaksana.</p>
-          </div>
-        `;
+        sections.push({
+          title: 'LAPORAN REVIEW DRAWING GAMBAR KERJA (DED)',
+          themeColor: 'pink',
+          description: `Terarsip sebanyak <strong>${drawingFiles.length} berkas DED resmi</strong> untuk pembangunan struktur baja dan pondasi.`,
+          rows: [
+            { label: 'Sistem Penilai:', value: 'Penanda Koordinat Pinpoint', isBold: true },
+            { label: 'Review CAD Online:', value: 'Pengawas vs Pelaksana Lapangan' }
+          ]
+        });
         break;
 
       case 'project_documents':
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #0d9488; text-transform: uppercase;">1. LEGALITAS KOMPATIBILITAS HUKUM</p>
-            <p style="font-size: 13px; color: #334155; margin: 0 0 10px 0;">Sektor legalitas mengarsipkan <strong>${formalDocuments.length} Dokumen Perizinan Aktif</strong>.</p>
-            <ul style="font-size: 12px; color: #475569; padding-left: 18px; margin: 0;">
-              <li style="margin-bottom: 4px;">Persetujuan Bangunan Gedung (PBG) / IMB Resmi</li>
-              <li style="margin-bottom: 4px;">Persetujuan Dokumen Amdal / UKL-UPL AMDAL</li>
-              <li style="margin-bottom: 4px;">Izin Penggunaan Air Bawah Tanah &amp; Listrik Gardu PLN</li>
-            </ul>
-          </div>
-        `;
+        sections.push({
+          title: 'LEGALITAS KOMPATIBILITAS HUKUM',
+          themeColor: 'slate',
+          description: `Sektor legalitas mengarsipkan <strong>${formalDocuments.length} Dokumen Perizinan Aktif</strong>.`,
+          rows: [
+            { label: 'Persetujuan Bangunan Gedung:', value: 'PBG / IMB Resmi' },
+            { label: 'Persetujuan Dokumen Lingkungan:', value: 'Amdal / UKL-UPL' },
+            { label: 'Utilitas Tambahan:', value: 'Air Bawah Tanah & Daya PLN' }
+          ]
+        });
         break;
 
       default:
-        specificContent = `
-          <div style="background-color: #f8fafc; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0;">
-            <p style="margin: 0 0 10px 0; font-size: 11px; font-weight: bold; color: #334155; text-transform: uppercase;">1. DATA RINGKASAN MONITORING</p>
-            <p style="font-size: 13px; color: #334155; margin: 0;">Status update terverifikasi dengan rata-rata kemajuan fisik proyek global mencapai <strong>${projectStats.physicalProgress}%</strong>.</p>
-          </div>
-        `;
+        sections.push({
+          title: 'DATA RINGKASAN MONITORING',
+          themeColor: 'blue',
+          rows: [
+            { label: 'Rerata Kemajuan Fisik:', value: `${projectStats.physicalProgress}%`, isBold: true }
+          ]
+        });
         break;
     }
 
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Sistem Pengawasan Proyek Terintegrasi (SPPI)</title>
-      </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9; padding: 30px 15px; margin: 0; -webkit-font-smoothing: antialiased;">
-        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
-          
-          <!-- Accent Header -->
-          <div style="background-color: #1e3a8a; padding: 28px 24px; border-bottom: 4px solid #ea580c; text-align: left;">
-            <p style="margin: 0 0 4px 0; color: #f97316; font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; font-weight: bold; font-family: monospace;">PT. Foresyndo Global Indonesia</p>
-            <h1 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.2;">Update Laporan Modul: ${moduleInfo.name}</h1>
-          </div>
-
-          <!-- Content Body -->
-          <div style="padding: 24px 20px;">
-            <p style="font-size: 14px; line-height: 1.6; color: #334155; margin-top: 0;">
-              Yth. <strong>Bapak/Ibu ${recipientName}</strong>,<br/><br/>
-              Melalui surat elektronik ini kami sampaikan tinjauan laporan kemajuan digital pada modul <strong>${moduleInfo.name}</strong> untuk Proyek Pembangunan Hotel &amp; Kost Eksklusif Foresyndo 2 Kertajati:
-            </p>
-
-            ${specificContent}
-
-            <!-- Action Button -->
-            <div style="text-align: center; margin: 30px 0 15px 0;">
-              <a href="${window.location.origin}" target="_blank" style="display: inline-block; background-color: #ea580c; color: #ffffff; text-decoration: none; padding: 12px 24px; font-size: 13px; font-weight: bold; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(234, 88, 12, 0.15); font-family: sans-serif;">Akses Portal SPPI Utama</a>
-            </div>
-
-            <p style="font-size: 12px; line-height: 1.5; color: #64748b; text-align: center; margin-top: 25px;">
-              Dokumen dikirimkan secara otomatis dari portal internal yang diaudit.<br/>
-              Keamanan Enkripsi: <strong>SHA-256 Ledger Verified Security</strong>
-            </p>
-          </div>
-
-          <!-- Footer Area -->
-          <div style="background-color: #f8fafc; padding: 16px 20px; border-top: 1px solid #f1f5f9; text-align: center; font-size: 11px; color: #94a3b8;">
-            <p style="margin: 0;">&copy; ${new Date().getFullYear()} PT. Foresyndo Global Indonesia. All Rights Reserved.</p>
-            <p style="margin: 4px 0 0 0;">Unit Procurement, Purchasing, and Contract Controls - Foresyndo</p>
-          </div>
-          
-        </div>
-      </body>
-      </html>
-    `;
+    return generateStandardEmailHTML({
+      recipientName,
+      title: `Update Laporan Modul: ${moduleInfo.name}`,
+      subtitle: `Sektor Suku Cadang & Administrasi Digital Portal SPPI`,
+      greeting: `Melalui surat elektronik ini kami sampaikan tinjauan laporan kemajuan digital pada modul <strong>${moduleInfo.name}</strong> untuk Proyek Pembangunan Hotel &amp; Kost Eksklusif Foresyndo 2 Kertajati:`,
+      actionLink: window.location.origin,
+      actionText: 'Akses Portal SPPI Utama',
+      footerStatusText: 'SHA-256 Ledger Verified Security',
+      sections
+    });
   };
 
   // Submit via Resend API

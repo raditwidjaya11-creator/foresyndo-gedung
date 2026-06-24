@@ -52,6 +52,9 @@ interface AppContextType {
   drawingFiles: DrawingFile[];
   addDrawingComment: (drawingId: string, pageNumber: number, text: string, pin?: { x: number; y: number }) => void;
   addDrawingFile: (fileName: string, totalPage: number, pages: any[]) => void;
+  updateDrawingVersion: (drawingId: string, version: string, changeNotes: string, totalPage: number, pages: any[]) => void;
+  clearAllDrawings: () => void;
+  resetDrawingsToDefault: () => void;
 
   // New Formal Documents states
   formalDocuments: FormalDocument[];
@@ -348,7 +351,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [drawingFiles, setDrawingFiles] = useState<DrawingFile[]>(() => {
     const cached = localStorage.getItem('sppi_drawings');
     if (cached) {
-      try { return JSON.parse(cached); } catch (e) { console.error('Error parsing sppi_drawings:', e); }
+      try { 
+        const parsed = JSON.parse(cached); 
+        // Validate if pages match expected high-fidelity count. If stale, fall back to initial 17 pages
+        if (Array.isArray(parsed) && parsed.length === INITIAL_DRAWINGS.length && parsed[0]?.pages?.length === INITIAL_DRAWINGS[0]?.pages?.length) {
+          return parsed;
+        }
+      } catch (e) { 
+        console.error('Error parsing sppi_drawings:', e); 
+      }
     }
     return INITIAL_DRAWINGS;
   });
@@ -420,6 +431,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // We can use pages array directly or import a fallback drawing image
     const blueprintFallback = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=1200';
     
+    const mappedPages = pages.map((p, idx) => ({
+      pageNumber: idx + 1,
+      pageCode: p.pageCode || `PG-0${idx + 1}`,
+      title: p.title || `Halaman Detail Teknik ${idx + 1}`,
+      image: p.image || blueprintFallback,
+      category: p.category || 'Arsitektur',
+      scale: p.scale || '1:100',
+      description: p.description || 'Gambar penjelasan teknik penunjang kelengkapan DED.',
+      specifications: p.specifications || ['Kepatuhan standar teknas SNI', 'Review mutu berkala'],
+      aiAnalysis: p.aiAnalysis || {
+        type: p.category === 'Arsitektur' ? 'Denah Arsitektural Umum' : p.category === 'Struktur & Sipil' ? 'Konstruksi Struktur & Beton' : 'Render Visualisasi Lanskap',
+        summary: p.description || 'Gambar penunjang yang mendeskripsikan elemen tata letak atau detail penulangan konstruksi.',
+        dims: 'Skala referensi terlampir.',
+        notes: 'Pelajari rencana pembalokan dan kolom sebelum memulai perancit baja tulangan.'
+      },
+      comments: []
+    }));
+
     const newDraw: DrawingFile = {
       id: `draw_${Date.now()}`,
       fileName,
@@ -427,23 +456,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalPage,
       uploadedDate: new Date().toISOString().split('T')[0],
       uploadedBy: currentUser?.displayName || 'Staff Teknis',
-      pages: pages.map((p, idx) => ({
-        pageNumber: idx + 1,
-        pageCode: p.pageCode || `PG-0${idx + 1}`,
-        title: p.title || `Halaman Detail Teknik ${idx + 1}`,
-        image: p.image || blueprintFallback,
-        category: p.category || 'Arsitektur',
-        scale: p.scale || '1:100',
-        description: p.description || 'Gambar penjelasan teknik penunjang kelengkapan DED.',
-        specifications: p.specifications || ['Kepatuhan standar teknas SNI', 'Review mutu berkala'],
-        aiAnalysis: p.aiAnalysis || {
-          type: p.category === 'Arsitektur' ? 'Denah Arsitektural Umum' : p.category === 'Struktur & Sipil' ? 'Konstruksi Struktur & Beton' : 'Render Visualisasi Lanskap',
-          summary: p.description || 'Gambar penunjang yang mendeskripsikan elemen tata letak atau detail penulangan konstruksi.',
-          dims: 'Skala referensi terlampir.',
-          notes: 'Pelajari rencana pembalokan dan kolom sebelum memulai perancit baja tulangan.'
-        },
-        comments: []
-      })),
+      pages: mappedPages,
+      version: 'v1.0',
+      versions: [{
+        version: 'v1.0',
+        uploadedDate: new Date().toISOString().split('T')[0],
+        uploadedBy: currentUser?.displayName || 'Staff Teknis',
+        changeNotes: 'Inisiasi gambar kerja awal',
+        pages: mappedPages
+      }],
       changeHistory: [{
         date: new Date().toISOString().split('T')[0],
         user: currentUser?.displayName || 'Staff',
@@ -454,6 +475,91 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDrawingFiles(prev => [newDraw, ...prev]);
     addNotification('Gambar Kerja Baru', `Menerima dokumen gambar teknik: ${fileName}`, 'success');
     showToast('Gambar Kerja berhasil diunggah!', 'success');
+  };
+
+  const updateDrawingVersion = (drawingId: string, version: string, changeNotes: string, totalPage: number, pages: any[]) => {
+    const blueprintFallback = 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=1200';
+    
+    const mappedPages = pages.map((p, idx) => ({
+      pageNumber: idx + 1,
+      pageCode: p.pageCode || `PG-0${idx + 1}`,
+      title: p.title || `Halaman Detail Teknik ${idx + 1}`,
+      image: p.image || blueprintFallback,
+      category: p.category || 'Arsitektur',
+      scale: p.scale || '1:100',
+      description: p.description || 'Gambar penjelasan teknik penunjang kelengkapan DED.',
+      specifications: p.specifications || ['Kepatuhan standar teknas SNI', 'Review mutu berkala'],
+      aiAnalysis: p.aiAnalysis || {
+        type: p.category === 'Arsitektur' ? 'Denah Arsitektural Umum' : p.category === 'Struktur & Sipil' ? 'Konstruksi Struktur & Beton' : 'Render Visualisasi Lanskap',
+        summary: p.description || 'Gambar penunjang yang mendeskripsikan elemen tata letak atau detail penulangan konstruksi.',
+        dims: 'Skala referensi terlampir.',
+        notes: 'Pelajari rencana pembalokan dan kolom sebelum memulai perancit baja tulangan.'
+      },
+      comments: []
+    }));
+
+    setDrawingFiles(prev => prev.map(draw => {
+      if (draw.id === drawingId) {
+        const currentVersion = draw.version || 'v1.0';
+        const existingVersions = draw.versions || [
+          {
+            version: currentVersion,
+            uploadedDate: draw.uploadedDate,
+            uploadedBy: draw.uploadedBy,
+            changeNotes: 'Inisiasi gambar kerja awal',
+            pages: draw.pages
+          }
+        ];
+
+        const newVersionEntry = {
+          version,
+          uploadedDate: new Date().toISOString().split('T')[0],
+          uploadedBy: currentUser?.displayName || 'Staff Teknis',
+          changeNotes,
+          pages: mappedPages
+        };
+
+        const updatedHistory = [
+          {
+            date: new Date().toISOString().split('T')[0],
+            user: currentUser?.displayName || 'Staff Teknis',
+            action: `Unggah Versi Baru ${version}: ${changeNotes}`
+          },
+          ...(draw.changeHistory || [])
+        ];
+
+        return {
+          ...draw,
+          totalPage,
+          version,
+          pages: mappedPages,
+          versions: [...existingVersions, newVersionEntry],
+          changeHistory: updatedHistory
+        };
+      }
+      return draw;
+    }));
+
+    addNotification(
+      'Revisi Gambar Kerja Baru',
+      `Versi baru (${version}) untuk gambar kerja berhasil diunggah dengan catatan: "${changeNotes}".`,
+      'success'
+    );
+    showToast(`Versi gambar kerja ${version} berhasil diperbarui!`, 'success');
+  };
+
+  const clearAllDrawings = () => {
+    setDrawingFiles([]);
+    localStorage.setItem('sppi_drawings', JSON.stringify([]));
+    addNotification('Data Gambar Kerja Dikosongkan', 'Semua data gambar kerja di dalam database/katalog telah dibersihkan.', 'info');
+    showToast('Semua data gambar kerja berhasil dikosongkan!', 'info');
+  };
+
+  const resetDrawingsToDefault = () => {
+    setDrawingFiles(INITIAL_DRAWINGS);
+    localStorage.setItem('sppi_drawings', JSON.stringify(INITIAL_DRAWINGS));
+    addNotification('Data Gambar Kerja Direset', 'Katalog gambar kerja telah dikembalikan ke data rancangan standar (DED awal).', 'success');
+    showToast('Katalog gambar kerja berhasil di-reset ke data default!', 'success');
   };
 
   const addFormalDocument = (fileName: string, category: FormalDocument['category'], size: string, permissions: UserRole[]) => {
@@ -1012,6 +1118,9 @@ Lokasi        : Jatitujuh, Majalengka, Jawa Barat
         drawingFiles,
         addDrawingComment,
         addDrawingFile,
+        updateDrawingVersion,
+        clearAllDrawings,
+        resetDrawingsToDefault,
         formalDocuments,
         addFormalDocument,
         deleteFormalDocument,

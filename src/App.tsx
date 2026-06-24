@@ -236,7 +236,7 @@ const AppShell: React.FC = () => {
       )}
 
       {/* TOP DESKTOP AND MOBILE INDUSTRIAL HEADER */}
-      <header className="bg-[#1E3A8A] text-white border-b-4 border-[#EA580C] sticky top-0 z-40 px-4 md:px-8 py-3">
+      <header className="bg-gradient-to-r from-[#1E3A8A] via-[#1E3A8A]/90 to-white text-white border-b-4 border-[#EA580C] sticky top-0 z-40 px-4 md:px-8 py-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           
           {/* Logo brand */}

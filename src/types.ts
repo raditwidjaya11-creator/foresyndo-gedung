@@ -188,6 +188,14 @@ export interface DrawingFile {
   uploadedDate: string;
   uploadedBy: string;
   pages: DrawingPage[];
+  version?: string; // e.g., 'v1.0'
+  versions?: Array<{
+    version: string;
+    uploadedDate: string;
+    uploadedBy: string;
+    changeNotes: string;
+    pages: DrawingPage[];
+  }>;
   changeHistory?: Array<{
     date: string;
     user: string;
