@@ -38,7 +38,10 @@ import {
   CheckCircle2,
   X,
   LogOut,
-  Share2
+  Share2,
+  Database,
+  Copy,
+  Check
 } from 'lucide-react';
 import { ProjectShareHub } from './components/ProjectShareHub';
 import { ModuleShareWidget } from './components/ModuleShareWidget';
@@ -60,6 +63,22 @@ const AppShell: React.FC = () => {
 
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [showShareHub, setShowShareHub] = useState<boolean>(false);
+
+  const [supabaseStatus, setSupabaseStatus] = useState<{
+    connected: boolean;
+    tableExists: boolean;
+    url: string;
+    message: string;
+  } | null>(null);
+  const [showSupabaseModal, setShowSupabaseModal] = useState<boolean>(false);
+  const [copiedSql, setCopiedSql] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    fetch('/api/supabase-status')
+      .then(res => res.json())
+      .then(data => setSupabaseStatus(data))
+      .catch(err => console.error('Error fetching Supabase status:', err));
+  }, []);
 
   // Filter tabs based on role permissions
   const tabs = [
@@ -301,6 +320,47 @@ const AppShell: React.FC = () => {
               <span>DATABASE SINKRON</span>
             </button>
 
+            {/* Supabase Integration Badge */}
+            {supabaseStatus && (
+              <button
+                onClick={() => setShowSupabaseModal(true)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-mono border transition cursor-pointer active:scale-95 ${
+                  supabaseStatus.connected && supabaseStatus.tableExists
+                    ? 'bg-indigo-950/40 hover:bg-indigo-900/50 border-indigo-500/30 text-indigo-300'
+                    : supabaseStatus.connected
+                    ? 'bg-amber-950/40 hover:bg-amber-900/50 border-amber-500/30 text-amber-300'
+                    : 'bg-slate-900/50 hover:bg-slate-800 border-slate-700/50 text-slate-400'
+                }`}
+                title="Status Integrasi Supabase. Klik untuk petunjuk & manajemen."
+              >
+                <Database className={`w-3.5 h-3.5 ${supabaseStatus.connected ? 'text-indigo-400' : 'text-slate-400'}`} />
+                <span>
+                  SUPABASE:{' '}
+                  {supabaseStatus.connected && supabaseStatus.tableExists
+                    ? 'AKTIF'
+                    : supabaseStatus.connected
+                    ? 'TABEL PENDING'
+                    : 'LOKAL'}
+                </span>
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                    supabaseStatus.connected && supabaseStatus.tableExists
+                      ? 'bg-indigo-400'
+                      : supabaseStatus.connected
+                      ? 'bg-amber-400'
+                      : 'bg-slate-400'
+                  }`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                    supabaseStatus.connected && supabaseStatus.tableExists
+                      ? 'bg-indigo-500'
+                      : supabaseStatus.connected
+                      ? 'bg-amber-500'
+                      : 'bg-slate-500'
+                  }`}></span>
+                </span>
+              </button>
+            )}
+
             {/* Simulated Active Account Identity details with strict Logout control */}
             <div className="flex items-center gap-3 bg-blue-900/50 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-mono">
               <div className="flex items-center gap-1.5 border-r border-blue-500/20 pr-3">
@@ -488,6 +548,115 @@ const AppShell: React.FC = () => {
 
       {/* PROJECT KONSOLIDASI DATA SHARING DIALOG */}
       <ProjectShareHub isOpen={showShareHub} onClose={() => setShowShareHub(false)} />
+
+      {/* SUPABASE CONFIGURATION HELPER MODAL */}
+      {showSupabaseModal && supabaseStatus && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-lg w-full overflow-hidden shadow-2xl animate-scaleUp text-slate-100 font-sans">
+            <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-display font-black text-sm uppercase tracking-wider text-slate-200">
+                  Integrasi Database Supabase
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSupabaseModal(false);
+                  setCopiedSql(false);
+                }}
+                className="text-slate-400 hover:text-slate-200 transition cursor-pointer p-1 rounded-full hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4 text-xs font-mono">
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">SUPABASE ENDPOINT</span>
+                <div className="p-2 bg-slate-950 border border-slate-850 rounded text-[10px] text-indigo-350 break-all select-all font-semibold">
+                  {supabaseStatus.url}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">STATUS INTEGRASI</span>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${
+                    supabaseStatus.connected && supabaseStatus.tableExists ? 'bg-green-500 animate-pulse' : 'bg-amber-500 animate-pulse'
+                  }`} />
+                  <span className="font-bold text-slate-200">
+                    {supabaseStatus.connected && supabaseStatus.tableExists 
+                      ? 'Sinkronisasi Otomatis Cloud Aktif'
+                      : 'Koneksi Sukses (Tabel Belum Terbentuk)'}
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed font-sans mt-1">
+                  Aplikasi ini menyelaraskan data gambar, anotasi, tagihan, dokumen, dan RAB antar-perangkat secara otomatis ke Supabase.
+                </p>
+              </div>
+
+              {!supabaseStatus.tableExists && (
+                <div className="space-y-2 bg-amber-950/20 border border-amber-500/20 rounded-lg p-3">
+                  <div className="flex items-center gap-1.5 text-amber-400">
+                    <span className="text-[10px] font-bold uppercase">Dibutuhkan Inisialisasi Tabel</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+                    Agar sinkronisasi awan berfungsi sempurna, Anda harus membuat tabel <code className="bg-slate-950 px-1 rounded text-amber-350">sppi_store</code> di konsol SQL editor Supabase Anda dengan perintah berikut:
+                  </p>
+                  
+                  <div className="relative">
+                    <pre className="p-2.5 bg-slate-950 border border-slate-850 rounded text-[9px] text-slate-300 overflow-x-auto font-medium leading-relaxed">
+{`create table sppi_store (
+  key text primary key,
+  value jsonb,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Izinkan akses publik untuk demonstrasi/preview (RLS)
+alter table sppi_store enable row level security;
+create policy "Allow public access" on sppi_store for all using (true) with check (true);`}
+                    </pre>
+                    <button
+                      onClick={() => {
+                        const sql = `create table sppi_store (\n  key text primary key,\n  value jsonb,\n  updated_at timestamp with time zone default timezone('utc\'::text, now()) not null\n);\n\nalter table sppi_store enable row level security;\ncreate policy "Allow public access" on sppi_store for all using (true) with check (true);`;
+                        navigator.clipboard.writeText(sql);
+                        setCopiedSql(true);
+                        setTimeout(() => setCopiedSql(false), 2000);
+                      }}
+                      className="absolute top-2 right-2 p-1.5 bg-slate-900 border border-slate-800 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                      title="Salin Perintah SQL"
+                    >
+                      {copiedSql ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {supabaseStatus.tableExists && (
+                <div className="bg-indigo-950/20 border border-indigo-500/20 rounded-lg p-3 space-y-1.5">
+                  <div className="text-indigo-400 font-bold uppercase text-[10px]">Tabel Terverifikasi Aktif</div>
+                  <p className="text-[10px] text-slate-300 font-sans leading-relaxed">
+                    Sistem mendeteksi tabel <code className="bg-slate-950 px-1 rounded text-indigo-300 font-semibold">sppi_store</code> aktif dan siap digunakan. Setiap modifikasi data lokal akan didorong ke awan secara instan!
+                  </p>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 bg-slate-950 border-t border-slate-800 flex justify-end gap-2.5">
+              <button
+                onClick={() => {
+                  setShowSupabaseModal(false);
+                  setCopiedSql(false);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-lg transition cursor-pointer"
+              >
+                Tutup Panduan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
