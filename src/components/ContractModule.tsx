@@ -36,7 +36,9 @@ import {
   Mail,
   Send,
   Share2,
-  Phone
+  Phone,
+  Camera,
+  FileImage
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -67,6 +69,9 @@ interface PaymentClaim {
   ownerComment?: string;
   approvedBy?: string;
   approvedDate?: string;
+  actualProgress?: number;
+  invoiceFile?: string;
+  photoFile?: string;
 }
 
 export const ContractModule: React.FC = () => {
@@ -76,6 +81,7 @@ export const ContractModule: React.FC = () => {
     contractors, 
     tenders, 
     bids,
+    projectStats,
     showToast 
   } = useApp();
 
@@ -90,7 +96,7 @@ export const ContractModule: React.FC = () => {
   });
 
   // Selected payment scheme template state
-  const [selectedSchemeId, setSelectedSchemeId] = useState<string>('standar');
+  const [selectedSchemeId, setSelectedSchemeId] = useState<string>('progres_25');
   
   // Custom payment schema states
   const [customDp, setCustomDp] = useState<number>(20);
@@ -105,6 +111,18 @@ export const ContractModule: React.FC = () => {
 
   // Payment schemes list configuration
   const PAYMENT_SCHEMES = useMemo(() => [
+    {
+      id: 'progres_25',
+      name: 'Skema Progres Berkala 25% (Milestone)',
+      description: 'Pembayaran rilis bertahap 25% dirilis ketat setiap kali akumulasi bobot progres fisik mencapai kelipatan 25% (25%, 50%, 75%, 100%).',
+      steps: [
+        { name: 'TERMIN I (PROGRES FISIK 25%)', pct: 25, description: 'Kemajuan fisik lapangan berbobot kumulatif mencapai minimum 25% (Persiapan & Substruktur Pondasi).' },
+        { name: 'TERMIN II (PROGRES FISIK 50%)', pct: 25, description: 'Kemajuan fisik lapangan berbobot kumulatif mencapai minimum 50% (Struktur Kolom & Lantai s/d Lantai 4).' },
+        { name: 'TERMIN III (PROGRES FISIK 75%)', pct: 25, description: 'Kemajuan fisik lapangan berbobot kumulatif mencapai minimum 75% (Atap/Topping Off Selesai & Arsitektur).' },
+        { name: 'TERMIN IV (PROGRES FISIK 100%)', pct: 20, description: 'Seluruh struktur, arsitektur, & MEP selesai 100% (Serah Terima Pertama / PHO).' },
+        { name: 'RETENSI PEMELIHARAAN', pct: 5, description: 'Masa pemeliharaan konstruksi selama 180 hari kalender lolos FHO.' }
+      ]
+    },
     {
       id: 'standar',
       name: 'Skema Progresif Standar (Default)',
@@ -204,36 +222,7 @@ export const ContractModule: React.FC = () => {
   const [paymentClaims, setPaymentClaims] = useState<PaymentClaim[]>(() => {
     const saved = localStorage.getItem('fgi_contract_claims2');
     if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'claim_1',
-        contractorId: 'contr2',
-        terminIndex: 0,
-        terminName: 'UANG MUKA (DP)',
-        pct: 15,
-        amount: 0,
-        requestedBy: 'Agus Salim (Site Manager PT. Tri Karya)',
-        requestedDate: '2026-06-12',
-        status: 'Paid',
-        notes: 'Uang Muka 15% untuk mobilisasi logisitik awal, penyiapan alat berat bore pile, dan perlengkapan safety K3.',
-        ownerComment: 'Disetujui untuk diproses bayar oleh tim keuangan setelah Dokumen Jaminan Pelaksanaan bersangkutan diverifikasi penuh oleh bank penerbit.',
-        approvedBy: 'Radityo Widjaya (Owner)',
-        approvedDate: '2026-06-14'
-      },
-      {
-        id: 'claim_2',
-        contractorId: 'contr2',
-        terminIndex: 1,
-        terminName: 'TERMIN I (STRUKTUR)',
-        pct: 35,
-        amount: 0,
-        requestedBy: 'Agus Salim (Site Manager PT. Tri Karya)',
-        requestedDate: '2026-06-19',
-        status: 'Pending',
-        notes: 'Pekerjaan pondasi sub-struktur rampung total dan pembesian tiang kolom utama lantai 1 rampung. Bobot fisik kumulatif lapangan diverifikasi Konsultan mencapai 42.10%.',
-        ownerComment: ''
-      }
-    ];
+    return [];
   });
 
   const savePaymentClaims = (newClaims: PaymentClaim[]) => {
@@ -241,10 +230,24 @@ export const ContractModule: React.FC = () => {
     localStorage.setItem('fgi_contract_claims2', JSON.stringify(newClaims));
   };
 
+  const filteredClaims = useMemo(() => {
+    return paymentClaims.filter(c => c.contractorId === selectedContractorId);
+  }, [paymentClaims, selectedContractorId]);
+
   // UI state variables for claiming
   const [showNewClaimModal, setShowNewClaimModal] = useState<boolean>(false);
   const [claimSelectIdx, setClaimSelectIdx] = useState<number>(0);
   const [claimNotesText, setClaimNotesText] = useState<string>('');
+  const [claimInvoiceFile, setClaimInvoiceFile] = useState<string>('');
+  const [claimPhotoFile, setClaimPhotoFile] = useState<string>('');
+  const [claimActualProgress, setClaimActualProgress] = useState<number>(0);
+
+  // Sync claim actual progress whenever modal opens
+  useEffect(() => {
+    if (showNewClaimModal && projectStats) {
+      setClaimActualProgress(projectStats.physicalProgress);
+    }
+  }, [showNewClaimModal, projectStats]);
 
   // Owner action feedback comment state
   const [reviewClaimId, setReviewClaimId] = useState<string | null>(null);
@@ -644,15 +647,32 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
     }
   };
 
+  // Cumulative progress target calculation for payment claims
+  const cumulativeTargetPct = useMemo(() => {
+    let sum = 0;
+    for (let i = 0; i <= claimSelectIdx; i++) {
+      if (activePaymentSteps[i]) {
+        const stepName = activePaymentSteps[i].name.toLowerCase();
+        if (stepName.includes('dp') || stepName.includes('uang muka')) {
+          continue;
+        }
+        sum += activePaymentSteps[i].pct;
+      }
+    }
+    return Math.min(sum, 100);
+  }, [claimSelectIdx, activePaymentSteps]);
+
+  const isProgressInsufficient = projectStats ? projectStats.physicalProgress < cumulativeTargetPct : false;
+
   // Create new claim request from active contractor/project manager
   const handleCreateClaimRequest = (e: React.FormEvent) => {
     e.preventDefault();
     const step = activePaymentSteps[claimSelectIdx];
     if (!step) return;
 
-    // Check if this step already has an active (Pending/Approved/Paid) claim
+    // Check if this step already has an active (Pending/Approved/Paid) claim for this contractor
     const existing = paymentClaims.find(
-      c => c.terminIndex === claimSelectIdx && c.status !== 'Rejected'
+      c => c.contractorId === selectedContractorId && c.terminIndex === claimSelectIdx && c.status !== 'Rejected'
     );
     if (existing) {
       showToast(`Termin "${step.name}" sudah diajukan sebelumnya dengan status ${existing.status}!`, 'error');
@@ -671,12 +691,17 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
       requestedBy: currentUser ? `${currentUser.name} (${currentUser.role})` : 'Agus Salim (Site Manager PT. Tri Karya)',
       requestedDate: new Date().toISOString().split('T')[0],
       status: 'Pending',
-      notes: claimNotesText || 'Pengajuan termin progres fisik sesuai dengan milestone yang tercapai di lapangan.'
+      notes: claimNotesText || 'Pengajuan termin progres fisik sesuai dengan milestone yang tercapai di lapangan.',
+      actualProgress: claimActualProgress,
+      invoiceFile: claimInvoiceFile || `INV-${selectedContractorId.toUpperCase()}-${Date.now().toString().slice(-4)}.pdf`,
+      photoFile: claimPhotoFile || 'progress_bukti_fisik.jpg'
     };
 
     savePaymentClaims([newClaim, ...paymentClaims]);
     setShowNewClaimModal(false);
     setClaimNotesText('');
+    setClaimInvoiceFile('');
+    setClaimPhotoFile('');
     showToast(`Pengajuan Klaim Termin "${step.name}" sebesar ${step.pct}% berhasil diajukan! Status: Menunggu Persetujuan Owner.`, 'success');
   };
 
@@ -1441,11 +1466,12 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
                   onChange={(e) => setSelectedSchemeId(e.target.value)}
                   className="p-2 bg-slate-50 border border-slate-200 text-xs font-semibold rounded-xl font-sans focus:outline-none focus:border-[#EA580C]"
                 >
-                  <option value="standar">1. Skema Progresif Standar</option>
-                  <option value="padat_modal">2. Skema Padat Modal (DP Tinggi)</option>
-                  <option value="bulanan">3. Skema Bulanan (Monthly Progress)</option>
-                  <option value="back_to_back">4. Skema Korporat Tanpa DP</option>
-                  <option value="custom">⚙️ 5. Skema Kustom Mandiri</option>
+                  <option value="progres_25">1. Skema Progres Berkala 25% (Milestone)</option>
+                  <option value="standar">2. Skema Progresif Standar</option>
+                  <option value="padat_modal">3. Skema Padat Modal (DP Tinggi)</option>
+                  <option value="bulanan">4. Skema Bulanan (Monthly Progress)</option>
+                  <option value="back_to_back">5. Skema Korporat Tanpa DP</option>
+                  <option value="custom">⚙️ 6. Skema Kustom Mandiri</option>
                 </select>
               </div>
             </div>
@@ -1588,26 +1614,42 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
                 </p>
               </div>
 
-              {/* Show submission button for contractors or admin */}
-              {(currentRole === 'Mitra Kontraktor' || currentRole === 'Project Manager' || currentRole === 'Super Admin') && (
+              {/* Actions Area */}
+              <div className="flex flex-wrap gap-2">
+                {(currentRole === 'Mitra Kontraktor' || currentRole === 'Project Manager' || currentRole === 'Super Admin') && (
+                  <button
+                    onClick={() => {
+                      // Find first unclaimed step for the active contractor
+                      const unclaimed = activePaymentSteps.map((step, idx) => ({ step, idx }))
+                        .filter(({ idx }) => !paymentClaims.some(c => c.contractorId === selectedContractorId && c.terminIndex === idx && c.status !== 'Rejected'));
+                      if (unclaimed.length > 0) {
+                        setClaimSelectIdx(unclaimed[0].idx);
+                      } else {
+                        setClaimSelectIdx(0);
+                      }
+                      setShowNewClaimModal(true);
+                    }}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-xs font-mono font-black rounded-xl uppercase flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Ajukan Klaim Baru
+                  </button>
+                )}
+
                 <button
+                  type="button"
                   onClick={() => {
-                    // Find first unclaimed step
-                    const unclaimed = activePaymentSteps.map((step, idx) => ({ step, idx }))
-                      .filter(({ idx }) => !paymentClaims.some(c => c.terminIndex === idx && c.status !== 'Rejected'));
-                    if (unclaimed.length > 0) {
-                      setClaimSelectIdx(unclaimed[0].idx);
-                    } else {
-                      setClaimSelectIdx(0);
+                    if (window.confirm('Apakah Anda yakin ingin mengosongkan semua alur persetujuan klaim karena pekerjaan belum dimulai?')) {
+                      savePaymentClaims([]);
+                      showToast('Alur persetujuan klaim berhasil dikosongkan.', 'success');
                     }
-                    setShowNewClaimModal(true);
                   }}
-                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white border border-slate-800 text-xs font-mono font-black rounded-xl uppercase flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                  className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-mono font-black rounded-xl uppercase flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Ajukan Klaim Baru
+                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                  Kosongkan Alur Klaim
                 </button>
-              )}
+              </div>
             </div>
 
             {/* Quick alert helper based on current role perspective */}
@@ -1626,14 +1668,14 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
 
             {/* Active claims history log */}
             <div className="space-y-4">
-              {paymentClaims.length === 0 ? (
+              {filteredClaims.length === 0 ? (
                 <div className="p-12 text-center border border-dashed border-slate-200 rounded-2xl text-slate-400">
                   <Clock className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                   <p className="text-xs font-sans">Belum ada riwayat pengajuan klaim termin untuk kontrak ini.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {paymentClaims.map((claim) => {
+                  {filteredClaims.map((claim) => {
                     const claimAmount = claim.amount || Math.round(contractFinancialSummary.finalContractGrandTotal * (claim.pct / 100));
                     
                     return (
@@ -1678,6 +1720,41 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
                             <p className="text-[10px] font-mono text-slate-400">
                               Diajukan Oleh: <span className="font-bold text-slate-500">{claim.requestedBy}</span>
                             </p>
+
+                            {/* Attachments Section */}
+                            {(claim.invoiceFile || claim.photoFile || claim.actualProgress !== undefined) && (
+                              <div className="flex flex-wrap items-center gap-3 pt-2">
+                                {claim.actualProgress !== undefined && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-150 text-slate-750 text-[9px] font-mono rounded font-bold">
+                                    Progres Fisik: {claim.actualProgress}%
+                                  </span>
+                                )}
+                                {claim.invoiceFile && (
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      showToast(`Mengunduh berkas invoice: ${claim.invoiceFile}`, 'info');
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 hover:text-blue-800 transition hover:underline cursor-pointer bg-none border-none p-0"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 text-blue-500" />
+                                    {claim.invoiceFile}
+                                  </button>
+                                )}
+                                {claim.photoFile && (
+                                  <button 
+                                    type="button"
+                                    onClick={() => {
+                                      showToast(`Membuka lampiran foto fisik lapangan: ${claim.photoFile}`, 'info');
+                                    }}
+                                    className="inline-flex items-center gap-1 text-[10px] font-mono text-indigo-600 hover:text-indigo-800 transition hover:underline cursor-pointer bg-none border-none p-0"
+                                  >
+                                    <Camera className="w-3.5 h-3.5 text-indigo-500" />
+                                    {claim.photoFile}
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {/* Owner review comments/justification panel */}
@@ -1963,7 +2040,7 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleCreateClaimRequest} className="p-6 space-y-4 text-xs font-sans">
+            <form onSubmit={handleCreateClaimRequest} className="p-6 space-y-4 text-xs font-sans max-h-[80vh] overflow-y-auto">
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">Pilih Tahap Termin Progres</label>
                 <select
@@ -1973,7 +2050,7 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
                 >
                   {activePaymentSteps.map((step, idx) => {
                     const stepAmount = contractFinancialSummary.finalContractGrandTotal * (step.pct / 100);
-                    const isClaimed = paymentClaims.some(c => c.terminIndex === idx && c.status !== 'Rejected');
+                    const isClaimed = paymentClaims.some(c => c.contractorId === selectedContractorId && c.terminIndex === idx && c.status !== 'Rejected');
                     return (
                       <option key={idx} value={idx} disabled={isClaimed}>
                         Tahap {idx + 1}: {step.name} ({step.pct}%) - Rp {Math.round(stepAmount).toLocaleString('id-ID')} {isClaimed ? '✓ (SUDAH DIAJUKAN)' : ''}
@@ -1984,21 +2061,104 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
                 <p className="text-[9px] text-slate-400 leading-tight">Hanya milestone termin yang sah dan belum diajukan (atau berstatus ditolak) yang dapat diajukan transaksinya.</p>
               </div>
 
+              {/* LIVE ACTUAL PROGRESS COMPARED TO MILESTONE TARGET */}
+              <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl space-y-2">
+                <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono font-bold uppercase">
+                  <span>Validasi Bobot Lapangan</span>
+                  <span className="text-slate-600">Kumulatif</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-450 block">Progres Aktual Lapangan:</span>
+                    <strong className="text-slate-800 text-sm font-black font-mono">
+                      {projectStats ? projectStats.physicalProgress : 0}%
+                    </strong>
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-450 block">Syarat Target Termin:</span>
+                    <strong className="text-indigo-700 text-sm font-black font-mono">
+                      {cumulativeTargetPct}%
+                    </strong>
+                  </div>
+                </div>
+
+                {isProgressInsufficient && (
+                  <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-850 space-y-1">
+                    <div className="flex items-center gap-1 font-bold text-amber-800">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>⚠️ Syarat Progres Belum Tercapai</span>
+                    </div>
+                    <p className="leading-normal">
+                      Progres fisik aktual ({projectStats?.physicalProgress}%) masih kurang dari target kumulatif ({cumulativeTargetPct}%). Cantumkan alasan/justifikasi khusus jika tetap ingin mengajukan.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* FINANCIAL BREAKDOWN */}
+              <div className="p-3.5 bg-blue-50/20 border border-blue-100 rounded-xl space-y-1 text-[11px] text-slate-700">
+                <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase mb-1">Rincian Finansial Klaim</span>
+                <div className="flex justify-between">
+                  <span>Nilai Total Kontrak:</span>
+                  <span className="font-mono">Rp {Math.round(contractFinancialSummary.finalContractGrandTotal).toLocaleString('id-ID')},00</span>
+                </div>
+                <div className="flex justify-between text-indigo-700 font-medium">
+                  <span>Porsi Termin ({activePaymentSteps[claimSelectIdx]?.pct}%):</span>
+                  <span className="font-mono">
+                    Rp {Math.round(contractFinancialSummary.finalContractGrandTotal * ((activePaymentSteps[claimSelectIdx]?.pct || 0) / 100)).toLocaleString('id-ID')},00
+                  </span>
+                </div>
+              </div>
+
+              {/* FILE UPLOAD & ATTACHMENT SIMULATOR */}
+              <div className="grid grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">Dokumen Invoice / BAP</label>
+                  <div className="border border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-2.5 bg-slate-50 text-center transition cursor-pointer relative group"
+                       onClick={() => {
+                         const names = [`INV-${selectedContractorId.toUpperCase()}-T${claimSelectIdx+1}.pdf`, `BAP-PROGRES-${cumulativeTargetPct}PCT.pdf`, `LAPORAN-PRESTASI-PEKERJAAN.pdf`];
+                         setClaimInvoiceFile(names[Math.floor(Math.random() * names.length)]);
+                         showToast('Dokumen simulasi berhasil dilampirkan!', 'success');
+                       }}>
+                    <FileText className="w-5 h-5 mx-auto text-slate-400 group-hover:text-blue-500 mb-1" />
+                    <span className="text-[10px] text-slate-500 block truncate font-medium">
+                      {claimInvoiceFile || "Lampirkan Dokumen PDF"}
+                    </span>
+                    {claimInvoiceFile && (
+                      <span className="text-[8px] text-emerald-600 block mt-0.5 font-bold">✓ Terlampir</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">Foto Bukti Fisik Lapangan</label>
+                  <div className="border border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-2.5 bg-slate-50 text-center transition cursor-pointer relative group"
+                       onClick={() => {
+                         const photos = ['foto_borepile_pondasi.jpg', 'foto_pengecoran_kolom.jpg', 'foto_pasangan_hebel.jpg', 'foto_instalasi_mep.jpg'];
+                         setClaimPhotoFile(photos[Math.floor(Math.random() * photos.length)]);
+                         showToast('Foto dokumentasi berhasil dilampirkan!', 'success');
+                       }}>
+                    <Camera className="w-5 h-5 mx-auto text-slate-400 group-hover:text-blue-500 mb-1" />
+                    <span className="text-[10px] text-slate-500 block truncate font-medium">
+                      {claimPhotoFile || "Lampirkan Foto Bukti"}
+                    </span>
+                    {claimPhotoFile && (
+                      <span className="text-[8px] text-emerald-600 block mt-0.5 font-bold">✓ Terlampir</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">Justifikasi Pekerjaan &amp; Bukti Fisik Lapangan</label>
                 <textarea
                   required
-                  rows={4}
+                  rows={3}
                   value={claimNotesText}
                   onChange={(e) => setClaimNotesText(e.target.value)}
-                  placeholder="Deskripsikan kemajuan pekerjaan yang telah dicapai sesuai syarat opname termin ini, misalnya: 'Pekerjaan galian oprit 100%, pengecoran tiang s/d lt. 2 rampung total 100%. Dilampirkan 5 berkas laporan prestasi kontraktor...'"
+                  placeholder="Deskripsikan kemajuan pekerjaan yang telah dicapai sesuai syarat opname termin ini..."
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-[#EA580C] focus:outline-none leading-relaxed"
                 />
-              </div>
-
-              <div className="p-3.5 bg-blue-50/50 border border-blue-100 text-[10px] rounded-xl text-blue-850 leading-normal flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                <p>Pengajuan ini akan langsung masuk ke dalam dashboard persetujuan Owner. Pembayaran rilis dana dilakukan setelah owner melakukan tanda tangan persetujuan klaim.</p>
               </div>
 
               <div className="flex gap-2.5 pt-4 justify-end">
@@ -2047,18 +2207,57 @@ Unit Manajemen Procurement & Pengendali Konstruksi`;
 
             {/* Modal Form */}
             <form onSubmit={handleApproveOrRejectConfirm} className="p-6 space-y-4 text-xs font-sans">
-              <div className="p-4 rounded-xl text-xs space-y-1 bg-slate-50 border border-slate-200">
-                <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase">Informasi Klaim yang Ditinjau</span>
-                <p className="font-bold text-slate-800">
-                  {paymentClaims.find(c => c.id === reviewClaimId)?.terminName} ({paymentClaims.find(c => c.id === reviewClaimId)?.pct}%)
-                </p>
-                <p className="text-slate-650">
-                  Nilai Pengajuan: <strong className="text-[#EA580C] font-mono">Rp {Math.round(paymentClaims.find(c => c.id === reviewClaimId)?.amount || 0).toLocaleString('id-ID')},00</strong>
-                </p>
-                <p className="text-[11px] text-slate-550 mt-1 italic leading-tight">
-                  "{paymentClaims.find(c => c.id === reviewClaimId)?.notes}"
-                </p>
-              </div>
+              {(() => {
+                const activeClaim = paymentClaims.find(c => c.id === reviewClaimId);
+                return (
+                  <div className="p-4 rounded-xl text-xs space-y-1 bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold block uppercase">Informasi Klaim yang Ditinjau</span>
+                    <p className="font-bold text-slate-800">
+                      {activeClaim?.terminName} ({activeClaim?.pct}%)
+                    </p>
+                    <p className="text-slate-650">
+                      Nilai Pengajuan: <strong className="text-[#EA580C] font-mono">Rp {Math.round(activeClaim?.amount || 0).toLocaleString('id-ID')},00</strong>
+                    </p>
+                    {activeClaim?.actualProgress !== undefined && (
+                      <p className="text-slate-650">
+                        Progres Fisik saat Diajukan: <strong className="text-indigo-700 font-mono font-bold">{activeClaim.actualProgress}%</strong>
+                      </p>
+                    )}
+                    <p className="text-[11px] text-slate-550 mt-1 italic leading-tight">
+                      "{activeClaim?.notes}"
+                    </p>
+
+                    {/* Display uploaded files */}
+                    {(activeClaim?.invoiceFile || activeClaim?.photoFile) && (
+                      <div className="mt-2.5 pt-2 border-t border-slate-200 space-y-1">
+                        <span className="text-[9px] font-mono text-slate-400 uppercase font-bold block">Lampiran Dokumen Kontraktor:</span>
+                        <div className="flex flex-wrap gap-2 text-[10px]">
+                          {activeClaim.invoiceFile && (
+                            <button 
+                              type="button"
+                              onClick={() => showToast(`Membuka berkas: ${activeClaim.invoiceFile}`, 'info')}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded border border-blue-150 transition cursor-pointer"
+                            >
+                              <FileText className="w-3 h-3 text-blue-500" />
+                              {activeClaim.invoiceFile}
+                            </button>
+                          )}
+                          {activeClaim.photoFile && (
+                            <button 
+                              type="button"
+                              onClick={() => showToast(`Membuka lampiran foto: ${activeClaim.photoFile}`, 'info')}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded border border-indigo-150 transition cursor-pointer"
+                            >
+                              <Camera className="w-3 h-3 text-indigo-500" />
+                              {activeClaim.photoFile}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold block">

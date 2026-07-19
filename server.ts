@@ -15,6 +15,10 @@ const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_0r
 // Initialize Supabase client
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+let isSupabaseAvailable = true;
+let lastRetryTime = 0;
+const RETRY_COOLDOWN = 5 * 60 * 1000; // 5 minutes
+
 // Helper to read database store from disk (local fallback)
 function readStore() {
   try {
@@ -39,14 +43,28 @@ function writeStore(store: any) {
 
 // Try to sync key-value store with Supabase
 async function fetchAllFromSupabase(): Promise<Record<string, any> | null> {
+  if (!isSupabaseAvailable) {
+    if (Date.now() - lastRetryTime > RETRY_COOLDOWN) {
+      isSupabaseAvailable = true;
+    } else {
+      return null;
+    }
+  }
+
   try {
     const { data, error } = await supabase
       .from("sppi_store")
       .select("key, value");
 
     if (error) {
-      // Table might not exist or auth failed
-      console.warn("Supabase fetch failed (table might not exist yet):", error.message);
+      const isFetchFailed = error.message?.includes("fetch failed") || error.message?.includes("TypeError") || error.message?.includes("failed to fetch");
+      if (isFetchFailed) {
+        isSupabaseAvailable = false;
+        lastRetryTime = Date.now();
+        console.log("Database status: Local disk storage mode active.");
+      } else {
+        console.log("Database status: Local fallback initiated.");
+      }
       return null;
     }
 
@@ -57,30 +75,67 @@ async function fetchAllFromSupabase(): Promise<Record<string, any> | null> {
       });
     }
     return store;
-  } catch (err) {
-    console.error("Supabase connection error:", err);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes("fetch failed") || errMsg.includes("TypeError") || errMsg.includes("failed to fetch")) {
+      isSupabaseAvailable = false;
+      lastRetryTime = Date.now();
+      console.log("Database status: Offline fallback storage active.");
+    } else {
+      console.log("Database status: Local storage backup mode active.");
+    }
     return null;
   }
 }
 
 async function upsertToSupabase(key: string, value: any) {
+  if (!isSupabaseAvailable) {
+    if (Date.now() - lastRetryTime > RETRY_COOLDOWN) {
+      isSupabaseAvailable = true;
+    } else {
+      return false;
+    }
+  }
+
   try {
     const { error } = await supabase
       .from("sppi_store")
       .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
 
     if (error) {
-      console.warn(`Supabase upsert failed for key ${key}:`, error.message);
+      const isFetchFailed = error.message?.includes("fetch failed") || error.message?.includes("TypeError") || error.message?.includes("failed to fetch");
+      if (isFetchFailed) {
+        isSupabaseAvailable = false;
+        lastRetryTime = Date.now();
+        console.log("Database status: Offline fallback active.");
+      } else {
+        console.log("Database status: Offline fallback active.");
+      }
       return false;
     }
     return true;
-  } catch (err) {
-    console.error(`Supabase connection error on upsert for key ${key}:`, err);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes("fetch failed") || errMsg.includes("TypeError") || errMsg.includes("failed to fetch")) {
+      isSupabaseAvailable = false;
+      lastRetryTime = Date.now();
+      console.log("Database status: Offline fallback active.");
+    } else {
+      console.log("Database status: Offline fallback active.");
+    }
     return false;
   }
 }
 
 async function upsertBulkToSupabase(data: Record<string, any>) {
+  if (!isSupabaseAvailable) {
+    if (Date.now() - lastRetryTime > RETRY_COOLDOWN) {
+      isSupabaseAvailable = true;
+    } else {
+      return false;
+    }
+  }
+
   try {
     const rows = Object.entries(data).map(([key, value]) => ({
       key,
@@ -95,12 +150,26 @@ async function upsertBulkToSupabase(data: Record<string, any>) {
       .upsert(rows, { onConflict: "key" });
 
     if (error) {
-      console.warn("Supabase bulk upsert failed:", error.message);
+      const isFetchFailed = error.message?.includes("fetch failed") || error.message?.includes("TypeError") || error.message?.includes("failed to fetch");
+      if (isFetchFailed) {
+        isSupabaseAvailable = false;
+        lastRetryTime = Date.now();
+        console.log("Database status: Offline fallback active.");
+      } else {
+        console.log("Database status: Offline fallback active.");
+      }
       return false;
     }
     return true;
-  } catch (err) {
-    console.error("Supabase connection error on bulk upsert:", err);
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes("fetch failed") || errMsg.includes("TypeError") || errMsg.includes("failed to fetch")) {
+      isSupabaseAvailable = false;
+      lastRetryTime = Date.now();
+      console.log("Database status: Offline fallback active.");
+    } else {
+      console.log("Database status: Offline fallback active.");
+    }
     return false;
   }
 }
@@ -113,9 +182,34 @@ async function startServer() {
 
   // Status check endpoint for Supabase connection
   app.get("/api/supabase-status", async (req, res) => {
+    if (!isSupabaseAvailable) {
+      if (Date.now() - lastRetryTime > RETRY_COOLDOWN) {
+        isSupabaseAvailable = true;
+      } else {
+        return res.json({
+          connected: false,
+          tableExists: false,
+          url: supabaseUrl,
+          message: "Supabase tidak dapat dijangkau (offline / koneksi gagal). Menggunakan penyimpanan disk lokal."
+        });
+      }
+    }
+
     try {
       const { error } = await supabase.from("sppi_store").select("key").limit(1);
       if (error) {
+        const isFetchFailed = error.message?.includes("fetch failed") || error.message?.includes("TypeError") || error.message?.includes("failed to fetch");
+        if (isFetchFailed) {
+          isSupabaseAvailable = false;
+          lastRetryTime = Date.now();
+          return res.json({
+            connected: false,
+            tableExists: false,
+            url: supabaseUrl,
+            message: "Supabase tidak dapat dijangkau (offline / koneksi gagal). Menggunakan penyimpanan disk lokal."
+          });
+        }
+
         if (error.code === "PGRST116" || error.code === "42P01") {
           return res.json({
             connected: true,
@@ -138,11 +232,16 @@ async function startServer() {
         message: "Supabase terhubung sepenuhnya dan siap sinkronisasi!"
       });
     } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes("fetch failed") || errMsg.includes("TypeError") || errMsg.includes("failed to fetch")) {
+        isSupabaseAvailable = false;
+        lastRetryTime = Date.now();
+      }
       res.json({
         connected: false,
         tableExists: false,
         url: supabaseUrl,
-        message: `Koneksi error: ${err?.message || err}`
+        message: `Koneksi error: ${errMsg}`
       });
     }
   });

@@ -14,6 +14,7 @@ import { AccountsManager } from './components/AccountsManager';
 import { DrawingViewer } from './components/DrawingViewer';
 import { ProjectDocuments } from './components/ProjectDocuments';
 import { WeatherWidget } from './components/WeatherWidget';
+import { VirtualVideo3D } from './components/VirtualVideo3D';
 import { 
   Building, 
   MapPin, 
@@ -41,7 +42,8 @@ import {
   Share2,
   Database,
   Copy,
-  Check
+  Check,
+  Video
 } from 'lucide-react';
 import { ProjectShareHub } from './components/ProjectShareHub';
 import { ModuleShareWidget } from './components/ModuleShareWidget';
@@ -84,6 +86,7 @@ const AppShell: React.FC = () => {
   const tabs = [
     { id: 'landing', label: 'Portal Publik', icon: Globe, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'drawing_viewer', label: 'Gambar Kerja', icon: Compass, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
+    { id: 'virtual_3d', label: 'Video Virtual 3D', icon: Video, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'project_documents', label: 'Dokumen Proyek', icon: FileText, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'rab_explorer', label: 'E-RAB Resmi', icon: FileSpreadsheet, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
     { id: 'contract_module', label: 'Modul Kontrak', icon: Briefcase, allowed: ['Super Admin', 'Owner', 'Project Manager', 'Konsultan', 'Investor', 'Mitra Kontraktor'] },
@@ -507,6 +510,7 @@ const AppShell: React.FC = () => {
         {activeTab === 'time_schedule' && <TimeSchedule />}
         {activeTab === 'owner' && <OwnerDashboard />}
         {activeTab === 'drawing_viewer' && <DrawingViewer />}
+        {activeTab === 'virtual_3d' && <VirtualVideo3D />}
         {activeTab === 'project_documents' && <ProjectDocuments />}
         {activeTab === 'progress' && <ProjectManagement />}
         {activeTab === 'investor' && <InvestorModule />}
